@@ -1,12 +1,17 @@
 import sqlglot
 from sqlglot import exp
 
+from config import (
+    BIGQUERY_DATASET_ID,
+    BIGQUERY_PROJECT_ID,
+    BIGQUERY_TABLE_ID,
+)
 from schema_metadata import get_bigquery_schema
 
 
-ALLOWED_PROJECT = "mos-gcp-host-dev-prj"
-ALLOWED_DATASET = "dw_nsp_api_views"
-ALLOWED_TABLE = "nsp_base_view_01"
+ALLOWED_PROJECT = BIGQUERY_PROJECT_ID
+ALLOWED_DATASET = BIGQUERY_DATASET_ID
+ALLOWED_TABLE = BIGQUERY_TABLE_ID
 
 
 def get_allowed_columns() -> set[str]:
@@ -16,10 +21,10 @@ def get_allowed_columns() -> set[str]:
     from google.cloud import bigquery
 
     full_table_id = (
-        f"{ALLOWED_PROJECT}.{ALLOWED_DATASET}.{ALLOWED_TABLE}"
+        f"{BIGQUERY_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{BIGQUERY_TABLE_ID}"
     )
 
-    client = bigquery.Client(project=ALLOWED_PROJECT)
+    client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
     table = client.get_table(full_table_id)
 
     return {

@@ -1,0 +1,17 @@
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.log
+
+.env
+.env.*
+*credentials*.json
+*service-account*.json
+application_default_credentials.json
+
+frontend/
+database.py
+generate_dummy_data.py
+test_*.py

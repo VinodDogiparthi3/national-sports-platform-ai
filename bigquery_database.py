@@ -1,13 +1,8 @@
 from google.cloud import bigquery
 
+from config import BIGQUERY_PROJECT_ID, MAX_BYTES_PROCESSED
 
-PROJECT_ID = "mos-gcp-host-dev-prj"
-
-# 100 MB safety threshold for the POC
-MAX_BYTES_PROCESSED = 250 * 1024 * 1024
-
-
-client = bigquery.Client(project=PROJECT_ID)
+client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
 
 
 def dry_run_sql(sql: str) -> int:
@@ -29,7 +24,7 @@ def dry_run_sql(sql: str) -> int:
     if bytes_processed > MAX_BYTES_PROCESSED:
         raise ValueError(
             "Query exceeds the configured "
-            f"100 MB processing limit. "
+            f"{MAX_BYTES_PROCESSED:,}-byte processing limit. "
             f"Estimated bytes: {bytes_processed}"
         )
 
