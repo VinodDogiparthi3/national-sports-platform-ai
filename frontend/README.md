@@ -1,5 +1,9 @@
 # React + Vite
 
+## Workspace test
+
+This note was added to verify README editing in the current workspace.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
