@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
-// Vite reads this from an env file in the frontend project root.
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -19,14 +18,12 @@ function App() {
 
   const messagesEndRef = useRef(null);
 
-  // Automatically scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: "smooth",
     });
   }, [messages, loading]);
 
-  // Detect whether text is predominantly Arabic
   const isArabic = (text) => {
     if (!text) return false;
 
@@ -43,7 +40,6 @@ function App() {
 
     setLoading(true);
 
-    // Display user's question immediately
     setMessages((prev) => [
       ...prev,
       {
@@ -88,7 +84,6 @@ function App() {
         {
           role: "assistant",
           text: data.answer,
-          sql: data.sql,
         },
       ]);
     } catch (error) {
@@ -106,7 +101,6 @@ function App() {
     }
   };
 
-  // Clear current chat
   const handleClearChat = () => {
     setMessages([
       {
@@ -165,21 +159,9 @@ function App() {
                   dir={arabic ? "rtl" : "ltr"}
                 >
                   {message.role === "assistant" ? (
-                    <>
-                      <ReactMarkdown>
-                        {message.text}
-                      </ReactMarkdown>
-
-                      {message.sql && (
-                        <details className="sql-details">
-                          <summary>View generated SQL</summary>
-
-                          <pre>
-                            <code>{message.sql}</code>
-                          </pre>
-                        </details>
-                      )}
-                    </>
+                    <ReactMarkdown>
+                      {message.text}
+                    </ReactMarkdown>
                   ) : (
                     message.text
                   )}

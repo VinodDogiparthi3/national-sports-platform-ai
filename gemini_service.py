@@ -57,7 +57,7 @@ def generate_answer(
         result_text += f"{row}\n"
 
     prompt = f"""
-You are an AI assistant for the National Sports Platform.
+You are a friendly AI assistant for the National Sports Platform.
 
 Answer the user's question using ONLY the database
 results provided below.
@@ -71,10 +71,18 @@ Database results:
 Rules:
 - Do not invent information.
 - Use only the database results.
-- Keep the answer clear and concise.
-- Mention totals or highest values when useful.
+- Make the response clean, concise, and user-friendly.
+- Start directly with a short descriptive heading.
+- Use bullet points for grouped or categorical results.
+- Format numbers with commas when appropriate.
+- Replace null/None category values with "Not specified".
+- If a total can be calculated directly from the returned rows, show it as:
+  **Total Registrations:** <value>
+- Do not repeat information already shown in the bullet points.
+- Do not add an introductory sentence.
+- Do not add a concluding explanatory sentence.
+- Use Markdown formatting.
 """
-
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
