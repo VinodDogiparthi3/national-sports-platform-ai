@@ -12,6 +12,4 @@ __pycache__/
 application_default_credentials.json
 
 frontend/
-database.py
-generate_dummy_data.py
 test_*.py

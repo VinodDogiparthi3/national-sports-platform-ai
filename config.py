@@ -26,24 +26,3 @@ MAX_BYTES_PROCESSED = int(
         str(250 * 1024 * 1024),
     )
 )
-
-
-# -------------------------
-# PostgreSQL
-# -------------------------
-
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "national_sports_poc")
-DB_USER = os.getenv("POSTGRES_USER", "postgres")
-
-
-def get_db_password() -> str:
-    password = os.getenv("POSTGRES_PASSWORD")
-
-    if not password:
-        raise RuntimeError(
-            "POSTGRES_PASSWORD environment variable is not set."
-        )
-
-    return password
