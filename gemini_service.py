@@ -29,7 +29,10 @@ Rules:
 - Use only tables and columns provided in the schema.
 - Do not invent tables or columns.
 - Do not infer meanings for ambiguous code fields.
-- Return SQL only.
+- Interpret obvious spelling or typing errors only when the intended question is clear.
+- Do not alter names, sports, identifiers, codes, or filter values unless the correction is unambiguous.
+- If a typo makes the request ambiguous, return exactly: CLARIFICATION: <one short question asking the user to clarify>.
+- Otherwise, return SQL only.
 - Do not return markdown.
 - For grouped/count results, order by the count descending.
 
