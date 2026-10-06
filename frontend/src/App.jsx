@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { streamQuestion } from "./api";
 import {
   ArrowUpRight,
   ArrowUp,
@@ -43,6 +44,7 @@ const sidebarItems = [
   { key: "reports", Icon: FileText },
 ];
 const quickInsightIcons = [BarChart3, TrendingUp, UsersRound, MapPin];
+const processingStatusIndex = { understanding: 0, analyzing: 1, preparing: 2 };
 
 const interfaceText = {
   en: {
@@ -259,7 +261,6 @@ function App() {
   const [activeTopic, setActiveTopic] = useState(null);
   const [composerFocused, setComposerFocused] = useState(false);
   const [exampleIndex, setExampleIndex] = useState(0);
-  const [processingStep, setProcessingStep] = useState(0);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const ui = interfaceText[language];
@@ -301,14 +302,6 @@ function App() {
     }, 4600);
     return () => window.clearInterval(timer);
   }, [activeTopic, composerFocused, input, language, ui.examples.length]);
-
-  useEffect(() => {
-    if (!loading) return undefined;
-    const timer = window.setInterval(() => {
-      setProcessingStep((step) => (step + 1) % ui.processingSteps.length);
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [language, loading, ui.processingSteps.length]);
 
   const filteredChats = savedChats.filter((chat) =>
     chat.title.toLowerCase().includes(historySearch.toLowerCase()),
@@ -368,26 +361,46 @@ function App() {
     setActiveTopic(null);
     setSidebarOpen(false);
     if (inputRef.current) inputRef.current.style.height = "auto";
-    setProcessingStep(0);
     setLoading(true);
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
-      });
-      const data = await response.json().catch(() => ({}));
+    const assistantId = crypto.randomUUID();
+    const assistantDraft = {
+      id: assistantId,
+      role: "assistant",
+      text: "",
+      sql: null,
+      streaming: true,
+      status: "understanding",
+    };
+    setMessages([...userMessages, assistantDraft]);
 
-      if (!response.ok) {
-        throw new Error(data.detail || `Request failed (${response.status})`);
-      }
+    try {
+      let streamedText = "";
+      let generatedSql = null;
+      const updateAssistant = (updates) => {
+        setMessages((current) => current.map((message) =>
+          message.id === assistantId ? { ...message, ...updates } : message,
+        ));
+      };
+
+      const result = await streamQuestion(question, (event, payload) => {
+        if (event === "status") updateAssistant({ status: payload.step });
+        if (event === "sql") {
+          generatedSql = payload.sql;
+          updateAssistant({ sql: generatedSql });
+        }
+        if (event === "token") {
+          streamedText += payload.text;
+          updateAssistant({ text: streamedText });
+        }
+      });
 
       const assistantMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: data.answer,
-        sql: data.sql,
+        ...assistantDraft,
+        text: streamedText,
+        sql: result.sql ?? generatedSql,
+        streaming: false,
+        status: null,
       };
       const updatedMessages = [...userMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -399,7 +412,7 @@ function App() {
       }));
     } catch (error) {
       const assistantMessage = {
-        id: crypto.randomUUID(),
+        id: assistantId,
         role: "assistant",
         text: error.message || "Sorry, I was unable to process your request.",
         error: true,
@@ -658,9 +671,17 @@ function App() {
                   <div className="message-content">
                     <span className="message-author">{message.role === "user" ? ui.you : ui.assistant}</span>
                     <div className={`message-bubble ${message.role} ${message.error ? "has-error" : ""}`} dir="auto">
-                      {message.role === "assistant" ? (
+                      {message.role === "assistant" && message.streaming && !message.text ? (
+                        <div className="thinking-indicator" role="status" aria-live="polite">
+                          <span /><span /><span />
+                          <p>{ui.processingSteps[processingStatusIndex[message.status] ?? 0]}</p>
+                        </div>
+                      ) : message.role === "assistant" ? (
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
                       ) : message.text}
+                      {message.role === "assistant" && message.streaming && message.text && (
+                        <span className="stream-cursor" aria-hidden="true" />
+                      )}
                     </div>
                     {message.role === "assistant" && message.sql && (
                       <details className="sql-details">
@@ -671,18 +692,6 @@ function App() {
                   </div>
                 </div>
               ))}
-              {loading && (
-                <div className="message-row assistant">
-                  <div className="assistant-avatar"><Bot size={17} /></div>
-                  <div className="message-content">
-                    <span className="message-author">{ui.assistant}</span>
-                    <div className="thinking-indicator" role="status">
-                      <span /><span /><span />
-                      <p>{ui.processingSteps[processingStep]}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </section>
           )}

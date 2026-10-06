@@ -1,14 +1,15 @@
 from difflib import get_close_matches
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from bigquery_database import execute_sql
-from gemini_service import generate_sql, generate_answer
+from gemini_service import generate_sql, generate_answer, generate_answer_stream
 from sql_guardrails import validate_sql
 
 
@@ -170,6 +171,65 @@ def ask(request: QuestionRequest):
             status_code=500,
             detail="Unable to process the request.",
         )
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    data = json.dumps(payload, ensure_ascii=False)
+    return f"event: {event}\ndata: {data}\n\n"
+
+
+@app.post("/ask/stream")
+def ask_stream(request: QuestionRequest):
+    def event_stream():
+        try:
+            yield _sse_event("status", {"step": "understanding"})
+
+            greeting_response = get_greeting_response(request.question)
+            if greeting_response:
+                yield _sse_event("token", {"text": greeting_response})
+                yield _sse_event("done", {"question": request.question, "sql": None})
+                return
+
+            generated_sql = generate_sql(request.question)
+
+            if generated_sql.upper().startswith("CLARIFICATION:"):
+                clarification = generated_sql[len("CLARIFICATION:"):].strip()
+                yield _sse_event(
+                    "token",
+                    {"text": clarification or "Could you rephrase your question?"},
+                )
+                yield _sse_event("done", {"question": request.question, "sql": None})
+                return
+
+            safe_sql = validate_sql(generated_sql)
+            yield _sse_event("sql", {"sql": safe_sql})
+            yield _sse_event("status", {"step": "analyzing"})
+
+            columns, rows = execute_sql(safe_sql)
+            yield _sse_event("status", {"step": "preparing"})
+
+            for text in generate_answer_stream(request.question, columns, rows):
+                yield _sse_event("token", {"text": text})
+
+            yield _sse_event("done", {"question": request.question, "sql": safe_sql})
+
+        except ValueError as e:
+            yield _sse_event("error", {"message": str(e)})
+
+        except Exception as e:
+            print("\nERROR IN /ask/stream:")
+            print(type(e).__name__)
+            print(str(e))
+            yield _sse_event("error", {"message": "Unable to process the request."})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 if FRONTEND_DIST.is_dir():

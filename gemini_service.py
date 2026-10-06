@@ -48,18 +48,13 @@ Question:
     return response.text.strip()
 
 
-def generate_answer(
-    question: str,
-    columns,
-    rows,
-) -> str:
-
+def _build_answer_prompt(question: str, columns, rows) -> str:
     result_text = f"Columns: {columns}\n"
 
     for row in rows:
         result_text += f"{row}\n"
 
-    prompt = f"""
+    return f"""
 You are a friendly AI assistant for the National Sports Platform.
 
 Answer the user's question using ONLY the database
@@ -86,9 +81,28 @@ Rules:
 - Do not add a concluding explanatory sentence.
 - Use Markdown formatting.
 """
+
+
+def generate_answer(
+    question: str,
+    columns,
+    rows,
+) -> str:
+    prompt = _build_answer_prompt(question, columns, rows)
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
     )
 
     return response.text.strip()
+
+
+def generate_answer_stream(question: str, columns, rows):
+    prompt = _build_answer_prompt(question, columns, rows)
+
+    for chunk in client.models.generate_content_stream(
+        model=MODEL,
+        contents=prompt,
+    ):
+        if chunk.text:
+            yield chunk.text
