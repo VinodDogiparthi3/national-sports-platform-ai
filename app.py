@@ -1,8 +1,11 @@
 from difflib import get_close_matches
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from bigquery_database import execute_sql
 from gemini_service import generate_sql, generate_answer
@@ -17,6 +20,7 @@ app = FastAPI(
     title="National Sports Platform AI API",
     version="1.0.0",
 )
+FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 
 
 # --------------------------------------------------
@@ -92,6 +96,10 @@ def get_greeting_response(question: str) -> str | None:
 
 @app.get("/")
 def root():
+    index_file = FRONTEND_DIST / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
+
     return {
         "message": "National Sports Platform AI API is running"
     }
@@ -162,3 +170,11 @@ def ask(request: QuestionRequest):
             status_code=500,
             detail="Unable to process the request.",
         )
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(FRONTEND_DIST), html=True),
+        name="frontend",
+    )
