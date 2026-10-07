@@ -189,10 +189,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .message-bubble th, .message-bubble td { padding: 8px 10px; border: 1px solid var(--line); text-align: start; }
 .message-bubble th { color: #34483c; background: var(--emerald-wash); font-weight: 700; }
 .message-bubble tr:nth-child(even) td { background: #faf9f4; }
-.sql-details { margin-top: 9px; color: #738179; font-size: 10px; }
-.sql-details summary { width: fit-content; display: flex; align-items: center; gap: 4px; cursor: pointer; font-weight: 600; }
-.sql-details[open] summary svg { transform: rotate(180deg); }
-.sql-details code { display: block; overflow-x: auto; margin-top: 7px; padding: 10px; border-radius: 6px; color: #405349; background: #edf1ed; font-size: 10px; white-space: pre-wrap; }
 .thinking-indicator { display: flex; align-items: center; gap: 4px; min-height: 32px; color: #77847c; }
 .thinking-indicator > span { width: 5px; height: 5px; border-radius: 50%; background: var(--primary); animation: pulse 1s infinite alternate; }
 .thinking-indicator > span:nth-child(2) { background: var(--teal); animation-delay: .15s; }

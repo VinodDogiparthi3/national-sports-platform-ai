@@ -8,7 +8,6 @@ import {
   Activity,
   BarChart3,
   Bot,
-  ChevronDown,
   Clock3,
   FileText,
   Home,
@@ -100,7 +99,6 @@ const interfaceText = {
     assistant: "Sports Platform AI",
     thinking: "Checking the platform data…",
     processingSteps: ["Understanding your question…", "Analyzing sports data…", "Preparing your answer…"],
-    sql: "View generated SQL",
     inputPlaceholder: "Ask anything about National Sports Platform data...",
     inputLabel: "Ask a question",
     send: "Send question",
@@ -166,7 +164,6 @@ const interfaceText = {
     assistant: "مساعد المنصة الرياضية",
     thinking: "جارٍ التحقق من بيانات المنصة…",
     processingSteps: ["جارٍ فهم سؤالك…", "جارٍ تحليل البيانات الرياضية…", "جارٍ إعداد الإجابة…"],
-    sql: "عرض SQL المُنشأ",
     inputPlaceholder: "اسأل عن أي بيانات في المنصة الوطنية للرياضة...",
     inputLabel: "اكتب سؤالاً",
     send: "إرسال السؤال",
@@ -387,7 +384,6 @@ function App() {
       id: assistantId,
       role: "assistant",
       text: "",
-      sql: null,
       streaming: true,
       status: "understanding",
     };
@@ -395,19 +391,14 @@ function App() {
 
     try {
       let streamedText = "";
-      let generatedSql = null;
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
         ));
       };
 
-      const result = await streamQuestion(question, (event, payload) => {
+      await streamQuestion(question, (event, payload) => {
         if (event === "status") updateAssistant({ status: payload.step });
-        if (event === "sql") {
-          generatedSql = payload.sql;
-          updateAssistant({ sql: generatedSql });
-        }
         if (event === "token") {
           streamedText += payload.text;
           updateAssistant({ text: streamedText });
@@ -417,7 +408,6 @@ function App() {
       const assistantMessage = {
         ...assistantDraft,
         text: streamedText,
-        sql: result.sql ?? generatedSql,
         streaming: false,
         status: null,
       };
@@ -710,12 +700,6 @@ function App() {
                         <span className="stream-cursor" aria-hidden="true" />
                       )}
                     </div>
-                    {message.role === "assistant" && message.sql && (
-                      <details className="sql-details">
-                        <summary><ChevronDown size={14} /> {ui.sql}</summary>
-                        <code>{message.sql}</code>
-                      </details>
-                    )}
                   </div>
                 </div>
               ))}

@@ -1,6 +1,7 @@
 from difflib import get_close_matches
 import json
 import os
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -16,7 +17,7 @@ from gemini_service import (
     generate_answer,
     generate_answer_stream,
 )
-from sql_guardrails import OutOfScopeQueryError, validate_sql
+from sql_guardrails import validate_sql
 
 
 # --------------------------------------------------
@@ -97,6 +98,49 @@ def get_greeting_response(question: str) -> str | None:
     return responses[closest_match[0]] if closest_match else None
 
 
+METADATA_QUESTION_MARKERS = (
+    "row count",
+    "rows count",
+    "count of rows",
+    "count rows",
+    "how many rows",
+    "number of rows",
+    "total rows",
+    "record count",
+    "count of records",
+    "how many records",
+    "number of records",
+    "total records",
+    "how many columns",
+    "what columns",
+    "which columns",
+    "list columns",
+    "show columns",
+    "available columns",
+    "column names",
+    "what fields",
+    "which fields",
+    "field names",
+    "schema",
+    "information schema",
+    "table structure",
+    "database structure",
+    "table information",
+    "database information",
+    "عدد الصفوف",
+    "عدد السجلات",
+    "عدد الأعمدة",
+    "أسماء الأعمدة",
+    "مخطط البيانات",
+    "هيكل الجدول",
+)
+
+
+def is_metadata_question(question: str) -> bool:
+    normalized = " ".join(re.sub(r"[^\w]+", " ", question.casefold()).split())
+    return any(marker in normalized for marker in METADATA_QUESTION_MARKERS)
+
+
 # --------------------------------------------------
 # API Endpoints
 # --------------------------------------------------
@@ -136,8 +180,13 @@ def ask(request: QuestionRequest):
         if greeting_response:
             return {
                 "question": request.question,
-                "sql": None,
                 "answer": greeting_response,
+            }
+
+        if is_metadata_question(request.question):
+            return {
+                "question": request.question,
+                "answer": OUT_OF_SCOPE_CLARIFICATION,
             }
 
         # 1. Natural language -> BigQuery SQL
@@ -147,12 +196,17 @@ def ask(request: QuestionRequest):
             clarification = generated_sql[len("CLARIFICATION:"):].strip()
             return {
                 "question": request.question,
-                "sql": None,
                 "answer": clarification or "Could you rephrase your question?",
             }
 
         # 2. SQL safety validation
-        safe_sql = validate_sql(generated_sql)
+        try:
+            safe_sql = validate_sql(generated_sql)
+        except ValueError:
+            return {
+                "question": request.question,
+                "answer": OUT_OF_SCOPE_CLARIFICATION,
+            }
 
         # 3. Execute against BigQuery
         columns, rows = execute_sql(safe_sql)
@@ -167,21 +221,13 @@ def ask(request: QuestionRequest):
         # 5. Return response to frontend
         return {
             "question": request.question,
-            "sql": safe_sql,
             "answer": answer,
-        }
-
-    except OutOfScopeQueryError:
-        return {
-            "question": request.question,
-            "sql": None,
-            "answer": OUT_OF_SCOPE_CLARIFICATION,
         }
 
     except ValueError as e:
         raise HTTPException(
             status_code=400,
-            detail=str(e),
+            detail="I couldn't process that NSP data question. Please try rephrasing it.",
         )
 
     except Exception as e:
@@ -209,7 +255,12 @@ def ask_stream(request: QuestionRequest):
             greeting_response = get_greeting_response(request.question)
             if greeting_response:
                 yield _sse_event("token", {"text": greeting_response})
-                yield _sse_event("done", {"question": request.question, "sql": None})
+                yield _sse_event("done", {"question": request.question})
+                return
+
+            if is_metadata_question(request.question):
+                yield _sse_event("token", {"text": OUT_OF_SCOPE_CLARIFICATION})
+                yield _sse_event("done", {"question": request.question})
                 return
 
             generated_sql = generate_sql(request.question)
@@ -220,11 +271,16 @@ def ask_stream(request: QuestionRequest):
                     "token",
                     {"text": clarification or "Could you rephrase your question?"},
                 )
-                yield _sse_event("done", {"question": request.question, "sql": None})
+                yield _sse_event("done", {"question": request.question})
                 return
 
-            safe_sql = validate_sql(generated_sql)
-            yield _sse_event("sql", {"sql": safe_sql})
+            try:
+                safe_sql = validate_sql(generated_sql)
+            except ValueError:
+                yield _sse_event("token", {"text": OUT_OF_SCOPE_CLARIFICATION})
+                yield _sse_event("done", {"question": request.question})
+                return
+
             yield _sse_event("status", {"step": "analyzing"})
 
             columns, rows = execute_sql(safe_sql)
@@ -233,14 +289,13 @@ def ask_stream(request: QuestionRequest):
             for text in generate_answer_stream(request.question, columns, rows):
                 yield _sse_event("token", {"text": text})
 
-            yield _sse_event("done", {"question": request.question, "sql": safe_sql})
-
-        except OutOfScopeQueryError:
-            yield _sse_event("token", {"text": OUT_OF_SCOPE_CLARIFICATION})
-            yield _sse_event("done", {"question": request.question, "sql": None})
+            yield _sse_event("done", {"question": request.question})
 
         except ValueError as e:
-            yield _sse_event("error", {"message": str(e)})
+            yield _sse_event(
+                "error",
+                {"message": "I couldn't process that NSP data question. Please try rephrasing it."},
+            )
 
         except Exception as e:
             print("\nERROR IN /ask/stream:")

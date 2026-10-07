@@ -27,12 +27,12 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
         self.assertIn('event: status\ndata: {"step": "understanding"}', response.text)
-        self.assertIn('event: sql\ndata: {"sql":', response.text)
+        self.assertNotIn("event: sql", response.text)
         self.assertIn('event: token\ndata: {"text": "## Counts\\n"}', response.text)
         self.assertIn('event: token\ndata: {"text": "\\nFootball: **3**"}', response.text)
-        self.assertIn("event: done", response.text)
+        self.assertIn('event: done\ndata: {"question":', response.text)
 
-    def test_json_ask_contract_remains_unchanged(self):
+    def test_json_ask_returns_answer_without_generated_sql(self):
         with (
             patch("app.generate_sql", return_value=self.sql),
             patch("app.validate_sql", side_effect=lambda query: query),
@@ -44,7 +44,7 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"question": self.question, "sql": self.sql, "answer": "Legacy answer"},
+            {"question": self.question, "answer": "Legacy answer"},
         )
 
     def test_version_endpoint_reports_api_and_cloud_run_revision(self):
@@ -74,7 +74,7 @@ class StreamingAskTests(unittest.TestCase):
             response = self.client.post("/ask", json={"question": "Tell me today's date"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["sql"], None)
+        self.assertNotIn("sql", response.json())
         self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
 
     def test_stream_ask_clarifies_when_generated_query_has_no_table(self):
@@ -86,8 +86,39 @@ class StreamingAskTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
-        self.assertIn('event: done\ndata: {"question": "Tell me today\'s date", "sql": null}', response.text)
+        self.assertIn('event: done\ndata: {"question": "Tell me today\'s date"}', response.text)
         self.assertNotIn("event: error", response.text)
+
+    def test_metadata_questions_are_clarified_without_sql_generation(self):
+        questions = (
+            "How many rows are there?",
+            "Show row count",
+            "What columns are available?",
+            "What is the schema?",
+            "How many columns are there?",
+        )
+
+        for question in questions:
+            with self.subTest(question=question), patch("app.generate_sql") as generate_sql:
+                response = self.client.post("/ask", json={"question": question})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+            self.assertNotIn("sql", response.json())
+            generate_sql.assert_not_called()
+
+    def test_stream_metadata_question_is_clarified_without_sql_generation(self):
+        with patch("app.generate_sql") as generate_sql:
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "What columns are available?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
+        self.assertNotIn("event: sql", response.text)
+        self.assertNotIn("event: error", response.text)
+        generate_sql.assert_not_called()
 
     def test_json_ask_clarifies_when_generated_query_uses_disallowed_table(self):
         query = "SELECT * FROM `other-project.other-dataset.other-table`"
@@ -110,6 +141,38 @@ class StreamingAskTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+
+    def test_json_ask_hides_schema_validation_details(self):
+        with (
+            patch("app.generate_sql", return_value="SELECT * FROM generated_query"),
+            patch(
+                "app.validate_sql",
+                side_effect=ValueError("Table is not allowed: information_schema.columns"),
+            ),
+        ):
+            response = self.client.post("/ask", json={"question": "Show registrations"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+        self.assertNotIn("information_schema", response.text)
+
+    def test_stream_ask_hides_schema_validation_details(self):
+        with (
+            patch("app.generate_sql", return_value="SELECT * FROM generated_query"),
+            patch(
+                "app.validate_sql",
+                side_effect=ValueError("Table is not allowed: information_schema.columns"),
+            ),
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "Show registrations"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
+        self.assertNotIn("information_schema", response.text)
+        self.assertNotIn("event: error", response.text)
 
 
 if __name__ == "__main__":

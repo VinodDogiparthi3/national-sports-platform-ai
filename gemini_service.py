@@ -13,7 +13,9 @@ client = genai.Client(
 )
 
 OUT_OF_SCOPE_CLARIFICATION = (
-    "Could you please clarify your question regarding the sports registration data?"
+    "Could you please ask a question related to the National Sports Platform (NSP)? "
+    "I can help with athlete registrations, sports, federations, age groups, "
+    "gender, nationalities, and other available NSP data."
 )
 
 
@@ -39,7 +41,10 @@ Schema:
 {schema}
 
 Rules:
-- Generate BigQuery Standard SQL only.
+- First determine whether the question is about National Sports Platform data supported by this schema.
+- If the question is unrelated, asks for database/schema metadata, or is not supported by the schema, return exactly: CLARIFICATION: {OUT_OF_SCOPE_CLARIFICATION}
+- Do not generate SQL for questions that need clarification.
+- Only for supported NSP questions, generate BigQuery Standard SQL.
 - Only SELECT queries are allowed.
 - Use the fully qualified table name provided in the schema.
 - Use only tables and columns provided in the schema.
@@ -87,6 +92,7 @@ Database results:
 Rules:
 - Do not invent information.
 - Use only the database results.
+- Do not mention SQL, schemas, table or column names, row counts, or database internals.
 - Make the response clean, concise, and user-friendly.
 - Start directly with a short descriptive heading.
 - Use bullet points for grouped or categorical results.
