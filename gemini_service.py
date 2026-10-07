@@ -1,3 +1,5 @@
+import re
+
 from google import genai
 
 from config import PROJECT_ID, LOCATION, MODEL
@@ -9,6 +11,16 @@ client = genai.Client(
     project=PROJECT_ID,
     location=LOCATION,
 )
+
+
+def _clean_sql_output(text: str) -> str:
+    text = text.strip()
+    fenced_sql = re.fullmatch(
+        r"```(?:sql|bigquery)?\s*(.*?)\s*```",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return fenced_sql.group(1).strip() if fenced_sql else text
 
 
 def generate_sql(question: str) -> str:
@@ -45,7 +57,7 @@ Question:
         contents=prompt,
     )
 
-    return response.text.strip()
+    return _clean_sql_output(response.text)
 
 
 def _build_answer_prompt(question: str, columns, rows) -> str:
