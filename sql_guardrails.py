@@ -14,6 +14,10 @@ ALLOWED_DATASET = BIGQUERY_DATASET_ID
 ALLOWED_TABLE = BIGQUERY_TABLE_ID
 
 
+class OutOfScopeQueryError(ValueError):
+    pass
+
+
 def get_allowed_columns() -> set[str]:
     """
     Get the approved columns dynamically from BigQuery metadata.
@@ -74,7 +78,7 @@ def validate_sql(sql: str) -> str:
     )
 
     if not tables:
-        raise ValueError(
+        raise OutOfScopeQueryError(
             "No table found in SQL query."
         )
 
@@ -95,19 +99,19 @@ def validate_sql(sql: str) -> str:
         )
 
         if table_name != ALLOWED_TABLE.lower():
-            raise ValueError(
+            raise OutOfScopeQueryError(
                 f"Table is not allowed: {table_name}"
             )
 
         # Require exact dataset
         if db_name != ALLOWED_DATASET.lower():
-            raise ValueError(
+            raise OutOfScopeQueryError(
                 f"Dataset is not allowed: {db_name}"
             )
 
         # Require exact project
         if catalog_name != ALLOWED_PROJECT.lower():
-            raise ValueError(
+            raise OutOfScopeQueryError(
                 f"Project is not allowed: {catalog_name}"
             )
 
@@ -147,7 +151,7 @@ def validate_sql(sql: str) -> str:
             continue
 
         if column_name not in allowed_columns:
-            raise ValueError(
+            raise OutOfScopeQueryError(
                 f"Column is not allowed: {column.name}"
             )
 

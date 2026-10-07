@@ -9,8 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from bigquery_database import execute_sql
-from gemini_service import generate_sql, generate_answer, generate_answer_stream
-from sql_guardrails import validate_sql
+from gemini_service import (
+    OUT_OF_SCOPE_CLARIFICATION,
+    generate_sql,
+    generate_answer,
+    generate_answer_stream,
+)
+from sql_guardrails import OutOfScopeQueryError, validate_sql
 
 
 # --------------------------------------------------
@@ -156,6 +161,13 @@ def ask(request: QuestionRequest):
             "answer": answer,
         }
 
+    except OutOfScopeQueryError:
+        return {
+            "question": request.question,
+            "sql": None,
+            "answer": OUT_OF_SCOPE_CLARIFICATION,
+        }
+
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -212,6 +224,10 @@ def ask_stream(request: QuestionRequest):
                 yield _sse_event("token", {"text": text})
 
             yield _sse_event("done", {"question": request.question, "sql": safe_sql})
+
+        except OutOfScopeQueryError:
+            yield _sse_event("token", {"text": OUT_OF_SCOPE_CLARIFICATION})
+            yield _sse_event("done", {"question": request.question, "sql": None})
 
         except ValueError as e:
             yield _sse_event("error", {"message": str(e)})

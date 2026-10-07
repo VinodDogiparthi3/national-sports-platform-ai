@@ -4,6 +4,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import app
+from config import BIGQUERY_DATASET_ID, BIGQUERY_PROJECT_ID, BIGQUERY_TABLE_ID
 
 
 class StreamingAskTests(unittest.TestCase):
@@ -44,6 +45,48 @@ class StreamingAskTests(unittest.TestCase):
             response.json(),
             {"question": self.question, "sql": self.sql, "answer": "Legacy answer"},
         )
+
+    def test_json_ask_clarifies_when_generated_query_has_no_table(self):
+        with patch("app.generate_sql", return_value="SELECT CURRENT_DATE()"):
+            response = self.client.post("/ask", json={"question": "Tell me today's date"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sql"], None)
+        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+
+    def test_stream_ask_clarifies_when_generated_query_has_no_table(self):
+        with patch("app.generate_sql", return_value="SELECT CURRENT_DATE()"):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "Tell me today's date"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
+        self.assertIn('event: done\ndata: {"question": "Tell me today\'s date", "sql": null}', response.text)
+        self.assertNotIn("event: error", response.text)
+
+    def test_json_ask_clarifies_when_generated_query_uses_disallowed_table(self):
+        query = "SELECT * FROM `other-project.other-dataset.other-table`"
+        with patch("app.generate_sql", return_value=query):
+            response = self.client.post("/ask", json={"question": "Show company revenue"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+
+    def test_json_ask_clarifies_when_generated_query_uses_unknown_column(self):
+        query = (
+            f"SELECT revenue FROM `{BIGQUERY_PROJECT_ID}.{BIGQUERY_DATASET_ID}."
+            f"{BIGQUERY_TABLE_ID}`"
+        )
+        with (
+            patch("app.generate_sql", return_value=query),
+            patch("sql_guardrails.get_allowed_columns", return_value={"sport"}),
+        ):
+            response = self.client.post("/ask", json={"question": "Show company revenue"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
 
 
 if __name__ == "__main__":

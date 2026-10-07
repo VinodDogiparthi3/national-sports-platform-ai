@@ -12,6 +12,10 @@ client = genai.Client(
     location=LOCATION,
 )
 
+OUT_OF_SCOPE_CLARIFICATION = (
+    "Could you please clarify your question regarding the sports registration data?"
+)
+
 
 def _clean_sql_output(text: str) -> str:
     text = text.strip()
@@ -40,6 +44,8 @@ Rules:
 - Use the fully qualified table name provided in the schema.
 - Use only tables and columns provided in the schema.
 - Do not invent tables or columns.
+- This dataset contains National Sports Platform data about registrations, athletes, sports, federations, regions, and participation.
+- If the question is unrelated to this data or cannot be answered using the listed schema, return exactly: CLARIFICATION: {OUT_OF_SCOPE_CLARIFICATION}
 - Do not infer meanings for ambiguous code fields.
 - Interpret obvious spelling or typing errors only when the intended question is clear.
 - Do not alter names, sports, identifiers, codes, or filter values unless the correction is unambiguous.
