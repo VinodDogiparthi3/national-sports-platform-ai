@@ -63,6 +63,8 @@ const interfaceText = {
     apiUnavailable: "API unavailable",
     apiChecking: "Checking API",
     apiDescription: "BigQuery assistant",
+    version: "Version",
+    versionUnavailable: "Version unavailable",
     context: "National Sports Platform",
     newChat: "New chat",
     welcomeTitle: "What would you like to explore?",
@@ -127,6 +129,8 @@ const interfaceText = {
     apiUnavailable: "الخدمة غير متاحة",
     apiChecking: "جارٍ التحقق من الخدمة",
     apiDescription: "مساعد بيانات BigQuery",
+    version: "الإصدار",
+    versionUnavailable: "الإصدار غير متاح",
     context: "المنصة الوطنية للرياضة",
     newChat: "محادثة جديدة",
     welcomeTitle: "ما الذي ترغب في استكشافه؟",
@@ -252,6 +256,7 @@ function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [deploymentVersion, setDeploymentVersion] = useState(null);
   const [savedChats, setSavedChats] = useState(readChatHistory);
   const [activeChatId, setActiveChatId] = useState(null);
   const [historySearch, setHistorySearch] = useState("");
@@ -286,6 +291,20 @@ function App() {
       })
       .then(() => active && setApiStatus("connected"))
       .catch(() => active && setApiStatus("offline"));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/version`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Version unavailable");
+        return response.json();
+      })
+      .then((version) => active && setDeploymentVersion(version))
+      .catch(() => active && setDeploymentVersion(null));
     return () => {
       active = false;
     };
@@ -554,6 +573,14 @@ function App() {
           <div>
             <strong>{apiStatus === "connected" ? ui.apiConnected : apiStatus === "offline" ? ui.apiUnavailable : ui.apiChecking}</strong>
             <span>{ui.apiDescription}</span>
+            <span
+              className="sidebar-version"
+              title={deploymentVersion ? `${deploymentVersion.service} · ${deploymentVersion.revision}` : undefined}
+            >
+              {deploymentVersion
+                ? `${ui.version} ${deploymentVersion.version} · ${deploymentVersion.revision === "local" ? "local" : deploymentVersion.revision.split("-").slice(-2).join("-")}`
+                : ui.versionUnavailable}
+            </span>
           </div>
           <Activity size={15} />
         </div>

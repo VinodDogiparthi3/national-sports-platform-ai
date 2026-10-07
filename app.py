@@ -1,5 +1,6 @@
 from difflib import get_close_matches
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -115,6 +116,15 @@ def root():
 def health():
     return {
         "status": "healthy"
+    }
+
+
+@app.get("/version")
+def version():
+    return {
+        "version": app.version,
+        "service": os.getenv("K_SERVICE", "local"),
+        "revision": os.getenv("K_REVISION", "local"),
     }
 
 

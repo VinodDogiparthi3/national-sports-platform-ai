@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -44,6 +45,28 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(
             response.json(),
             {"question": self.question, "sql": self.sql, "answer": "Legacy answer"},
+        )
+
+    def test_version_endpoint_reports_api_and_cloud_run_revision(self):
+        with (
+            patch.object(app.app, "version", "2.0.0"),
+            patch.dict(
+                os.environ,
+                {
+                    "K_SERVICE": "national-sports-platform-ai-v2",
+                    "K_REVISION": "national-sports-platform-ai-v2-00002-j45",
+                },
+            ),
+        ):
+            response = self.client.get("/version")
+
+        self.assertEqual(
+            response.json(),
+            {
+                "version": "2.0.0",
+                "service": "national-sports-platform-ai-v2",
+                "revision": "national-sports-platform-ai-v2-00002-j45",
+            },
         )
 
     def test_json_ask_clarifies_when_generated_query_has_no_table(self):
