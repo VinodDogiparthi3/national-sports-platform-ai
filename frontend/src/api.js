@@ -2,14 +2,14 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
 
-export async function streamQuestion(question, onEvent) {
+export async function streamQuestion(question, language, onEvent) {
   const response = await fetch(`${API_BASE_URL}/ask/stream`, {
     method: "POST",
     headers: {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, language }),
   });
 
   if (!response.ok || !response.body) {
@@ -56,4 +56,42 @@ export async function streamQuestion(question, onEvent) {
   } finally {
     reader.releaseLock();
   }
+}
+
+export async function translateQuestionsToArabic(questions) {
+  const response = await fetch(`${API_BASE_URL}/translate/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ questions }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Question translation is unavailable.");
+  }
+
+  const result = await response.json();
+  if (!Array.isArray(result.translations) || result.translations.length !== questions.length) {
+    throw new Error("Invalid question translation response.");
+  }
+  return result.translations;
+}
+
+export async function translateChatTexts(texts, targetLanguage) {
+  const response = await fetch(`${API_BASE_URL}/translate/texts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ texts, target_language: targetLanguage }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "Conversation translation is unavailable.");
+  }
+
+  const result = await response.json();
+  if (!Array.isArray(result.translations) || result.translations.length !== texts.length) {
+    throw new Error("Invalid conversation translation response.");
+  }
+  return result.translations;
 }
