@@ -32,6 +32,82 @@ class StreamingAskTests(unittest.TestCase):
         self.assertIn('event: token\ndata: {"text": "\\nFootball: **3**"}', response.text)
         self.assertIn('event: done\ndata: {"question":', response.text)
 
+    def test_arabic_ui_and_question_stream_arabic_response(self):
+        with (
+            patch("app.generate_sql", return_value=self.sql) as generate_sql,
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch(
+                "app.generate_answer_stream",
+                return_value=iter(["الرياضة الأكثر تسجيلًا هي Football."]),
+            ) as answer_stream,
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "ما الرياضة الأكثر تسجيلًا؟", "language": "ar"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("الرياضة الأكثر تسجيلًا هي Football.", response.text)
+        generate_sql.assert_called_once_with("ما الرياضة الأكثر تسجيلًا؟", "ar")
+        answer_stream.assert_called_once_with(
+            "ما الرياضة الأكثر تسجيلًا؟",
+            ["sport"],
+            [("Football",)],
+            "ar",
+        )
+
+    def test_english_ui_and_question_stream_english_response(self):
+        with (
+            patch("app.generate_sql", return_value=self.sql),
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch(
+                "app.generate_answer_stream",
+                return_value=iter(["Football has the most registrations."]),
+            ) as answer_stream,
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={
+                    "question": "Which sport has the most registrations?",
+                    "language": "en",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Football has the most registrations.", response.text)
+        answer_stream.assert_called_once_with(
+            "Which sport has the most registrations?",
+            ["sport"],
+            [("Football",)],
+            "en",
+        )
+
+    def test_arabic_question_keeps_arabic_narrative_with_english_database_value(self):
+        with (
+            patch("app.generate_sql", return_value=self.sql),
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch(
+                "app.generate_answer_stream",
+                return_value=iter(["الرياضة الأكثر تسجيلًا هي Football."]),
+            ) as answer_stream,
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "ما الرياضة الأكثر تسجيلًا؟", "language": "en"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("الرياضة الأكثر تسجيلًا هي Football.", response.text)
+        answer_stream.assert_called_once_with(
+            "ما الرياضة الأكثر تسجيلًا؟",
+            ["sport"],
+            [("Football",)],
+            "ar",
+        )
+
     def test_json_ask_returns_answer_without_generated_sql(self):
         with (
             patch("app.generate_sql", return_value=self.sql),
@@ -68,6 +144,32 @@ class StreamingAskTests(unittest.TestCase):
                 "revision": "national-sports-platform-ai-v2-00002-j45",
             },
         )
+
+    def test_question_translation_endpoint_returns_display_translations(self):
+        questions = ["How many registrations are there for Football?"]
+        translations = ["كم عدد التسجيلات لرياضة Football؟"]
+        with patch("app.translate_questions_to_arabic", return_value=translations) as translate:
+            response = self.client.post(
+                "/translate/questions",
+                json={"questions": questions},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"translations": translations})
+        translate.assert_called_once_with(questions)
+
+    def test_conversation_translation_endpoint_accepts_both_languages(self):
+        texts = ["Total registrations are 132,021."]
+        translation = ["إجمالي التسجيلات هو 132,021."]
+        with patch("app.translate_texts", return_value=translation) as translate:
+            response = self.client.post(
+                "/translate/texts",
+                json={"texts": texts, "target_language": "ar"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"translations": translation})
+        translate.assert_called_once_with(texts, "ar")
 
     def test_json_ask_clarifies_when_generated_query_has_no_table(self):
         with patch("app.generate_sql", return_value="SELECT CURRENT_DATE()"):

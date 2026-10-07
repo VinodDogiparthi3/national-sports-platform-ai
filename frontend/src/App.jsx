@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { streamQuestion } from "./api";
+import { streamQuestion, translateChatTexts } from "./api";
 import {
   ArrowUpRight,
   ArrowUp,
@@ -14,8 +14,6 @@ import {
   Menu,
   MessageSquareText,
   MapPin,
-  PanelLeftClose,
-  PanelLeftOpen,
   PersonStanding,
   Plus,
   Search,
@@ -24,7 +22,6 @@ import {
   Trophy,
   TrendingUp,
   UsersRound,
-  X,
 } from "lucide-react";
 import "./Workspace.css";
 
@@ -49,7 +46,7 @@ const interfaceText = {
   en: {
     brand: "National Sports",
     brandSubtitle: "Platform AI",
-    newConversation: "New conversation",
+    newConversation: "New Conversation",
     workspace: "Workspace",
     navigation: { home: "Home", analytics: "Analytics", athletes: "Athletes", sports: "Sports", regions: "Regions", reports: "Reports" },
     navigationUnavailable: "This section is not available yet",
@@ -61,11 +58,10 @@ const interfaceText = {
     apiConnected: "API connected",
     apiUnavailable: "API unavailable",
     apiChecking: "Checking API",
-    apiDescription: "BigQuery assistant",
+    apiDescription: "Sports data assistant",
     version: "Version",
     versionUnavailable: "Version unavailable",
     context: "National Sports Platform",
-    newChat: "New chat",
     welcomeTitle: "What would you like to explore?",
     welcomeBody: "Ask questions about registrations, athletes, sports, federations, regions and participation across the platform.",
     visualLabel: "SPORTS DATA",
@@ -98,16 +94,14 @@ const interfaceText = {
     you: "You",
     assistant: "Sports Platform AI",
     thinking: "Checking the platform data…",
+    genericError: "Unable to process the request. Please try again.",
     processingSteps: ["Understanding your question…", "Analyzing sports data…", "Preparing your answer…"],
     inputPlaceholder: "Ask anything about National Sports Platform data...",
     inputLabel: "Ask a question",
     send: "Send question",
     privacyNote: "Answers are grounded in platform data. Verify high-impact decisions.",
-    openMenu: "Open conversation menu",
-    closeMenu: "Close conversation menu",
-    closeSidebar: "Close sidebar",
-    collapseSidebar: "Collapse sidebar",
-    expandSidebar: "Expand sidebar",
+    openMenu: "Open sidebar",
+    closeMenu: "Close sidebar",
     language: "Language",
     pageTitle: "National Sports Platform AI",
   },
@@ -126,11 +120,10 @@ const interfaceText = {
     apiConnected: "الخدمة متصلة",
     apiUnavailable: "الخدمة غير متاحة",
     apiChecking: "جارٍ التحقق من الخدمة",
-    apiDescription: "مساعد بيانات BigQuery",
+    apiDescription: "مساعد بيانات المنصة الرياضية",
     version: "الإصدار",
     versionUnavailable: "الإصدار غير متاح",
     context: "المنصة الوطنية للرياضة",
-    newChat: "محادثة جديدة",
     welcomeTitle: "ما الذي ترغب في استكشافه؟",
     welcomeBody: "اسأل عن التسجيلات والرياضيين والرياضات والاتحادات والمناطق والمشاركة عبر المنصة.",
     visualLabel: "بيانات الرياضة",
@@ -163,16 +156,14 @@ const interfaceText = {
     you: "أنت",
     assistant: "مساعد المنصة الرياضية",
     thinking: "جارٍ التحقق من بيانات المنصة…",
+    genericError: "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى.",
     processingSteps: ["جارٍ فهم سؤالك…", "جارٍ تحليل البيانات الرياضية…", "جارٍ إعداد الإجابة…"],
     inputPlaceholder: "اسأل عن أي بيانات في المنصة الوطنية للرياضة...",
     inputLabel: "اكتب سؤالاً",
     send: "إرسال السؤال",
     privacyNote: "الإجابات مستندة إلى بيانات المنصة. تحقّق من القرارات المهمة.",
-    openMenu: "فتح قائمة المحادثات",
-    closeMenu: "إغلاق قائمة المحادثات",
-    closeSidebar: "إغلاق القائمة الجانبية",
-    collapseSidebar: "طي القائمة الجانبية",
-    expandSidebar: "توسيع القائمة الجانبية",
+    openMenu: "فتح القائمة الجانبية",
+    closeMenu: "إغلاق القائمة الجانبية",
     language: "اللغة",
     pageTitle: "المنصة الوطنية للرياضة | المساعد الذكي",
   },
@@ -199,6 +190,15 @@ function readChatHistory() {
 
 function saveChat(history, chat) {
   return [chat, ...history.filter((item) => item.id !== chat.id)].slice(0, MAX_SAVED_CHATS);
+}
+
+async function translateTextsInBatches(texts, targetLanguage) {
+  const translations = [];
+  for (let index = 0; index < texts.length; index += 50) {
+    const batch = texts.slice(index, index + 50);
+    translations.push(...await translateChatTexts(batch, targetLanguage));
+  }
+  return translations;
 }
 
 function QuestionComposer({ input, inputRef, loading, onChange, onFocus, onBlur, onKeyDown, onSubmit, placeholder, ui, landing = false }) {
@@ -257,8 +257,9 @@ function App() {
   const [savedChats, setSavedChats] = useState(readChatHistory);
   const [activeChatId, setActiveChatId] = useState(null);
   const [historySearch, setHistorySearch] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => !window.matchMedia("(max-width: 820px)").matches,
+  );
   const [apiStatus, setApiStatus] = useState("checking");
   const [activeTopic, setActiveTopic] = useState(null);
   const [composerFocused, setComposerFocused] = useState(false);
@@ -267,6 +268,11 @@ function App() {
   const inputRef = useRef(null);
   const ui = interfaceText[language];
   const isArabic = language === "ar";
+  const getChatTitle = (chat) => (
+    chat.displayTitles?.[language]
+    || (isArabic ? chat.arabicTitle : chat.title)
+    || chat.title
+  );
 
   useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(savedChats));
@@ -320,40 +326,116 @@ function App() {
   }, [activeTopic, composerFocused, input, language, ui.examples.length]);
 
   const filteredChats = savedChats.filter((chat) =>
-    chat.title.toLowerCase().includes(historySearch.toLowerCase()),
+    getChatTitle(chat).toLowerCase().includes(historySearch.toLowerCase()),
   );
 
-  const startNewChat = () => {
+  const changeLanguage = async (nextLanguage) => {
+    setLanguage(nextLanguage);
+
+    const messagesById = new Map();
+    for (const message of [
+      ...messages,
+      ...savedChats.flatMap((chat) => chat.messages),
+    ]) {
+      if (message.role === "user" || message.role === "assistant") {
+        const sourceLanguage = message.language
+          || (/[\u0600-\u06ff]/.test(message.text) ? "ar" : "en");
+        const existingTranslation = message.displayTranslations?.[nextLanguage]
+          || (nextLanguage === "ar" && message.arabicText);
+        if (sourceLanguage === nextLanguage || existingTranslation) continue;
+        messagesById.set(message.id, message);
+      }
+    }
+    const untranslated = [...messagesById.values()];
+    if (!untranslated.length) return;
+
+    try {
+      const translations = await translateTextsInBatches(
+        untranslated.map((message) => message.text),
+        nextLanguage,
+      );
+      const translationsById = new Map(
+        untranslated.map((message, index) => [message.id, translations[index]]),
+      );
+
+      setMessages((current) => current.map((message) => (
+        translationsById.has(message.id)
+          ? {
+              ...message,
+              displayTranslations: {
+                ...message.displayTranslations,
+                [nextLanguage]: translationsById.get(message.id),
+              },
+              ...(nextLanguage === "ar" ? { arabicText: translationsById.get(message.id) } : {}),
+            }
+          : message
+      )));
+      setSavedChats((current) => current.map((chat) => {
+        const translatedMessages = chat.messages.map((message) => (
+          translationsById.has(message.id)
+            ? {
+                ...message,
+                displayTranslations: {
+                  ...message.displayTranslations,
+                  [nextLanguage]: translationsById.get(message.id),
+                },
+                ...(nextLanguage === "ar" ? { arabicText: translationsById.get(message.id) } : {}),
+              }
+            : message
+        ));
+        const firstUserMessage = translatedMessages.find((message) => message.role === "user");
+        const translatedTitle = firstUserMessage && (
+          translationsById.get(firstUserMessage.id)
+          || firstUserMessage.displayTranslations?.[nextLanguage]
+          || firstUserMessage.text
+        );
+        return {
+          ...chat,
+          displayTitles: {
+            ...chat.displayTitles,
+            ...(translatedTitle ? { [nextLanguage]: translatedTitle } : {}),
+          },
+          arabicTitle: nextLanguage === "ar" ? translatedTitle || chat.arabicTitle : chat.arabicTitle,
+          messages: translatedMessages,
+        };
+      }));
+    } catch {
+      // Keep original questions visible if translation is temporarily unavailable.
+    }
+  };
+
+  const startNewConversation = () => {
     if (loading) return;
     setMessages([]);
     setActiveChatId(null);
     setActiveTopic(null);
     setInput("");
-    setSidebarOpen(false);
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      setSidebarOpen(false);
+    }
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const toggleSidebar = () => {
-    if (window.matchMedia("(max-width: 820px)").matches) {
-      setSidebarOpen((open) => !open);
-    } else {
-      setSidebarCollapsed((collapsed) => !collapsed);
-    }
+    setSidebarOpen((open) => !open);
   };
 
-  const selectNavigationItem = () => startNewChat();
+  const selectNavigationItem = () => startNewConversation();
 
   const openChat = (chat) => {
     if (loading) return;
     setActiveChatId(chat.id);
     setActiveTopic(null);
     setMessages(chat.messages);
-    setSidebarOpen(false);
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      setSidebarOpen(false);
+    }
   };
 
   const sendQuestion = async (rawQuestion = input) => {
     const question = rawQuestion.trim();
     if (!question || loading) return;
+    const responseIsArabic = language === "ar" || /[\u0600-\u06ff]/.test(question);
 
     const chatId = activeChatId || crypto.randomUUID();
     const existingChat = savedChats.find((chat) => chat.id === chatId);
@@ -362,7 +444,40 @@ function App() {
       id: crypto.randomUUID(),
       role: "user",
       text: question,
+      language: /[\u0600-\u06ff]/.test(question) ? "ar" : "en",
+      ...(language === "ar" && /[\u0600-\u06ff]/.test(question)
+        ? { arabicText: question }
+        : {}),
     };
+    const arabicQuestionTranslation = language === "ar"
+      ? translateTextsInBatches([question], "ar")
+        .then(([translation]) => {
+          if (!translation) return null;
+          const displayTranslations = { ar: translation };
+          setMessages((current) => current.map((message) => (
+            message.id === userMessage.id
+              ? { ...message, arabicText: translation, displayTranslations }
+              : message
+          )));
+          setSavedChats((current) => current.map((chat) => {
+            if (chat.id !== chatId) return chat;
+            const translatedMessages = chat.messages.map((message) => (
+              message.id === userMessage.id
+                ? { ...message, arabicText: translation, displayTranslations }
+                : message
+            ));
+            const firstUserMessage = translatedMessages.find((message) => message.role === "user");
+            return {
+              ...chat,
+              arabicTitle: firstUserMessage?.arabicText || chat.arabicTitle,
+              displayTitles: { ...chat.displayTitles, ar: firstUserMessage?.arabicText || chat.title },
+              messages: translatedMessages,
+            };
+          }));
+          return translation;
+        })
+        .catch(() => null)
+      : Promise.resolve(null);
     const userMessages = [...messages, userMessage];
 
     setActiveChatId(chatId);
@@ -370,12 +485,16 @@ function App() {
     setSavedChats((history) => saveChat(history, {
       id: chatId,
       title,
+      arabicTitle: existingChat?.arabicTitle,
+      displayTitles: existingChat?.displayTitles,
       messages: userMessages,
       updatedAt: Date.now(),
     }));
     setInput("");
     setActiveTopic(null);
-    setSidebarOpen(false);
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      setSidebarOpen(false);
+    }
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
 
@@ -384,6 +503,7 @@ function App() {
       id: assistantId,
       role: "assistant",
       text: "",
+      language: responseIsArabic ? "ar" : "en",
       streaming: true,
       status: "understanding",
     };
@@ -397,7 +517,7 @@ function App() {
         ));
       };
 
-      await streamQuestion(question, (event, payload) => {
+      await streamQuestion(question, language, (event, payload) => {
         if (event === "status") updateAssistant({ status: payload.step });
         if (event === "token") {
           streamedText += payload.text;
@@ -405,32 +525,71 @@ function App() {
         }
       });
 
+      const translatedQuestion = await arabicQuestionTranslation;
+      const finalUserMessages = userMessages.map((message) => (
+        message.id === userMessage.id && translatedQuestion
+          ? {
+              ...message,
+              arabicText: translatedQuestion,
+              displayTranslations: { ...message.displayTranslations, ar: translatedQuestion },
+            }
+          : message
+      ));
       const assistantMessage = {
         ...assistantDraft,
         text: streamedText,
         streaming: false,
         status: null,
       };
-      const updatedMessages = [...userMessages, assistantMessage];
+      const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
       setSavedChats((history) => saveChat(history, {
         id: chatId,
         title,
+        arabicTitle: finalUserMessages.find((message) => message.role === "user")?.arabicText || existingChat?.arabicTitle,
+        displayTitles: {
+          ...existingChat?.displayTitles,
+          ...(finalUserMessages.find((message) => message.role === "user")?.displayTranslations || {}),
+          ...(finalUserMessages.find((message) => message.role === "user")?.arabicText
+            ? { ar: finalUserMessages.find((message) => message.role === "user").arabicText }
+            : {}),
+        },
         messages: updatedMessages,
         updatedAt: Date.now(),
       }));
     } catch (error) {
+      const translatedQuestion = await arabicQuestionTranslation;
+      const finalUserMessages = userMessages.map((message) => (
+        message.id === userMessage.id && translatedQuestion
+          ? {
+              ...message,
+              arabicText: translatedQuestion,
+              displayTranslations: { ...message.displayTranslations, ar: translatedQuestion },
+            }
+          : message
+      ));
       const assistantMessage = {
         id: assistantId,
         role: "assistant",
-        text: error.message || "Sorry, I was unable to process your request.",
+        text: responseIsArabic
+          ? interfaceText.ar.genericError
+          : error.message || interfaceText.en.genericError,
+        language: responseIsArabic ? "ar" : "en",
         error: true,
       };
-      const updatedMessages = [...userMessages, assistantMessage];
+      const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
       setSavedChats((history) => saveChat(history, {
         id: chatId,
         title,
+        arabicTitle: finalUserMessages.find((message) => message.role === "user")?.arabicText || existingChat?.arabicTitle,
+        displayTitles: {
+          ...existingChat?.displayTitles,
+          ...(finalUserMessages.find((message) => message.role === "user")?.displayTranslations || {}),
+          ...(finalUserMessages.find((message) => message.role === "user")?.arabicText
+            ? { ar: finalUserMessages.find((message) => message.role === "user").arabicText }
+            : {}),
+        },
         messages: updatedMessages,
         updatedAt: Date.now(),
       }));
@@ -455,7 +614,9 @@ function App() {
 
   const selectTopic = (topic) => {
     setActiveTopic(topic);
-    setSidebarOpen(false);
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      setSidebarOpen(false);
+    }
     inputRef.current?.focus();
   };
 
@@ -471,13 +632,9 @@ function App() {
   };
 
   return (
-    <div className={`assistant-app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} dir={isArabic ? "rtl" : "ltr"}>
-      {sidebarOpen && (
-        <button
-          className="sidebar-scrim"
-          aria-label={ui.closeMenu}
-          onClick={() => setSidebarOpen(false)}
-        />
+    <div className={`assistant-app ${sidebarOpen ? "" : "sidebar-hidden"}`} dir={isArabic ? "rtl" : "ltr"}>
+      {sidebarOpen && window.matchMedia("(max-width: 820px)").matches && (
+        <div className="sidebar-scrim" aria-hidden="true" />
       )}
 
       <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
@@ -487,27 +644,7 @@ function App() {
             <strong>{ui.brand}</strong>
             <span>{ui.brandSubtitle}</span>
           </div>
-          <button
-            className="sidebar-collapse"
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            aria-label={sidebarCollapsed ? ui.expandSidebar : ui.collapseSidebar}
-            title={sidebarCollapsed ? ui.expandSidebar : ui.collapseSidebar}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
-          <button
-            className="sidebar-close"
-            onClick={() => setSidebarOpen(false)}
-            aria-label={ui.closeSidebar}
-          >
-            <X size={18} />
-          </button>
         </div>
-
-        <button className="new-chat-button" onClick={startNewChat} disabled={loading} aria-label={ui.newConversation} title={ui.newConversation}>
-          <Plus size={17} />
-          <span>{ui.newConversation}</span>
-        </button>
 
         <nav className="sidebar-nav" aria-label={ui.workspace}>
           <span className="sidebar-label">{ui.workspace}</span>
@@ -549,10 +686,10 @@ function App() {
                 key={chat.id}
                 className={`history-item ${chat.id === activeChatId ? "selected" : ""}`}
                 onClick={() => openChat(chat)}
-                title={chat.title}
+                title={getChatTitle(chat)}
               >
                 <MessageSquareText size={14} />
-                <span>{chat.title}</span>
+                <span>{getChatTitle(chat)}</span>
               </button>
             ))}
           </div>
@@ -568,7 +705,7 @@ function App() {
               title={deploymentVersion ? `${deploymentVersion.service} · ${deploymentVersion.revision}` : undefined}
             >
               {deploymentVersion
-                ? `${ui.version} ${deploymentVersion.version} · ${deploymentVersion.revision === "local" ? "local" : deploymentVersion.revision.split("-").slice(-2).join("-")}`
+                ? `${ui.version} ${deploymentVersion.version} · ${deploymentVersion.revision === "local" ? (isArabic ? "محلي" : "local") : deploymentVersion.revision.split("-").slice(-2).join("-")}`
                 : ui.versionUnavailable}
             </span>
           </div>
@@ -582,33 +719,44 @@ function App() {
             <button
               className="menu-button"
               onClick={toggleSidebar}
-              aria-label={ui.openMenu}
-              aria-expanded={window.matchMedia("(max-width: 820px)").matches ? sidebarOpen : !sidebarCollapsed}
+              aria-label={sidebarOpen ? ui.closeMenu : ui.openMenu}
+              aria-expanded={sidebarOpen}
             >
               <Menu size={19} />
             </button>
             <div>
               <span>{ui.context}</span>
-              <strong>{activeChatId ? savedChats.find((chat) => chat.id === activeChatId)?.title || ui.askData : ui.askData}</strong>
+              <strong>
+                {activeChatId
+                  ? getChatTitle(savedChats.find((chat) => chat.id === activeChatId) || { title: "" }) || ui.askData
+                  : ui.askData}
+              </strong>
             </div>
           </div>
           <div className="header-actions">
             <div className="language-switch" role="group" aria-label={ui.language}>
               <button
                 className={language === "en" ? "selected" : ""}
-                onClick={() => setLanguage("en")}
+                onClick={() => changeLanguage("en")}
                 aria-pressed={language === "en"}
               >EN</button>
               <button
                 className={language === "ar" ? "selected" : ""}
-                onClick={() => setLanguage("ar")}
+                onClick={() => changeLanguage("ar")}
                 aria-pressed={language === "ar"}
               >عربي</button>
             </div>
-            <button className="header-new-chat" onClick={startNewChat} disabled={loading}>
-              <Plus size={15} />
-              <span>{ui.newChat}</span>
-            </button>
+            {messages.length > 0 && (
+              <button
+                className="header-new-conversation"
+                onClick={startNewConversation}
+                disabled={loading}
+                aria-label={ui.newConversation}
+              >
+                <Plus size={15} />
+                <span>{ui.newConversation}</span>
+              </button>
+            )}
           </div>
         </header>
 
@@ -694,8 +842,14 @@ function App() {
                           <p>{ui.processingSteps[processingStatusIndex[message.status] ?? 0]}</p>
                         </div>
                       ) : message.role === "assistant" ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
-                      ) : message.text}
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {message.displayTranslations?.[language] || message.text}
+                        </ReactMarkdown>
+                      ) : (
+                        message.displayTranslations?.[language]
+                        || (language === "ar" ? message.arabicText : null)
+                        || message.text
+                      )}
                       {message.role === "assistant" && message.streaming && message.text && (
                         <span className="stream-cursor" aria-hidden="true" />
                       )}
