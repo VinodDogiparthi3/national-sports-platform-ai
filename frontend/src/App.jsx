@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { streamQuestion, translateChatTexts } from "./api";
 import { getLatestExportContext, resolveDownloadUrl } from "./exportContext";
+import { parseResultCards, splitResultsMarkdown } from "./resultsDisplay";
 import {
   ArrowUpRight,
   ArrowUp,
@@ -42,20 +43,6 @@ const sidebarItems = [
 ];
 const quickInsightIcons = [BarChart3, TrendingUp, UsersRound, MapPin];
 const processingStatusIndex = { understanding: 0, analyzing: 1, preparing: 2 };
-
-function splitResultsMarkdown(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  const resultsStartIndex = lines.findIndex((line) =>
-    /^\s{0,3}(?:[-*+]\s+|[\d٠-٩۰-۹]+[.)]\s+|\|)/.test(line),
-  );
-
-  if (resultsStartIndex === -1) return null;
-
-  return {
-    summary: lines.slice(0, resultsStartIndex).join("\n").trim(),
-    results: lines.slice(resultsStartIndex).join("\n").trim(),
-  };
-}
 
 const interfaceText = {
   en: {
@@ -864,6 +851,9 @@ function App() {
                     const resultSections = message.role === "assistant" && message.exportContext
                       ? splitResultsMarkdown(responseText)
                       : null;
+                    const resultCards = resultSections
+                      ? parseResultCards(resultSections.results, resultSections.summary)
+                      : null;
 
                     return <div className={`message-content ${resultSections ? "has-results" : ""}`}>
                     <span className="message-author">{message.role === "user" ? ui.you : ui.assistant}</span>
@@ -882,9 +872,33 @@ function App() {
                               </ReactMarkdown>
                             )}
                             <div className="results-content" dir="auto">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {resultSections.results}
-                              </ReactMarkdown>
+                              {resultCards ? (
+                                <div className="result-card-grid" role="list">
+                                  {resultCards.map((card, index) => (
+                                    <article className="result-card" key={`${card.label}-${index}`} role="listitem">
+                                      <span className="result-card-icon" aria-hidden="true">{card.icon}</span>
+                                      <div className="result-card-copy">
+                                        <span className="result-card-label">{card.label}</span>
+                                        {card.value && (
+                                          <span className="result-card-value">
+                                            <strong>{card.value}</strong>
+                                            {card.valueLabel && <span>{card.valueLabel}</span>}
+                                          </span>
+                                        )}
+                                        {card.details.length > 0 && (
+                                          <span className="result-card-details">
+                                            {card.details.map((detail) => <span key={detail}>{detail}</span>)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </article>
+                                  ))}
+                                </div>
+                              ) : (
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {resultSections.results}
+                                </ReactMarkdown>
+                              )}
                             </div>
                           </>
                         ) : (

@@ -151,7 +151,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .assistant-avatar { width: 29px; height: 29px; margin-top: 17px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; color: #fff; background: var(--primary); }
 .message-content { min-width: 0; max-width: min(700px, calc(100% - 40px)); }
 .message-row.user .message-content { max-width: min(620px, 84%); }
-.message-content.has-results { max-width: min(960px, calc(100% - 40px)); }
+.message-content.has-results { width: 100%; max-width: min(960px, calc(100% - 40px)); flex: 1 1 auto; }
 .message-author { display: block; margin: 0 2px 5px; color: #87938b; font-size: 9px; font-weight: 700; }
 .message-row.user .message-author { text-align: right; }
 .message-bubble { color: #2c3a33; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
@@ -172,6 +172,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .message-bubble code { padding: 2px 4px; border-radius: 4px; color: #365045; background: #e9efe9; font-size: .9em; }
 .message-bubble blockquote { margin: 9px 0; padding: 7px 11px; border-left: 3px solid #a3b9a9; color: #617068; background: #eef3ed; }
 .results-content { max-height: min(60vh, 480px); overflow-x: auto; overflow-y: auto; overscroll-behavior: contain; }
+.result-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); align-content: start; gap: 8px; padding: 3px 2px; }
+.result-card { min-width: 0; min-height: 58px; padding: 9px 10px; display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 9px; border: 1px solid #e4e7de; border-radius: 9px; background: #fff; box-shadow: 0 2px 7px rgba(37, 45, 39, .035); }
+.result-card-icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: #edf4ee; font-size: 18px; }
+.result-card-copy { min-width: 0; display: grid; gap: 2px; }
+.result-card-label { overflow-wrap: anywhere; color: #35443b; font-size: 11px; font-weight: 600; line-height: 1.35; }
+.result-card-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; color: var(--primary-deep); font-size: 10px; line-height: 1.35; }
+.result-card-value strong { font-size: 14px; font-weight: 800; }
+.result-card-details { display: flex; flex-wrap: wrap; gap: 3px 8px; color: #737b75; font-size: 9px; line-height: 1.35; }
 .message-bubble.assistant table { width: 100%; display: block; overflow-x: auto; border-collapse: collapse; margin: 12px 0; font-size: 11px; white-space: nowrap; }
 .message-bubble th, .message-bubble td { padding: 8px 10px; border: 1px solid var(--line); text-align: start; }
 .message-bubble th { color: #34483c; background: var(--emerald-wash); font-weight: 700; }
