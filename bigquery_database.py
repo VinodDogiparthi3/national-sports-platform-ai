@@ -59,3 +59,34 @@ def execute_sql(sql: str):
     ]
 
     return columns, rows
+
+
+def _run_export_query(sql: str, page_size: int):
+    # Same byte guard as normal answers; the query cache makes the later download re-run cheap.
+    dry_run_sql(sql)
+
+    job_config = bigquery.QueryJobConfig(
+        maximum_bytes_billed=MAX_BYTES_PROCESSED,
+        use_query_cache=True
+    )
+
+    return client.query(
+        sql,
+        job_config=job_config
+    ).result(page_size=page_size)
+
+
+def get_export_row_count(sql: str) -> int:
+    return int(_run_export_query(sql, page_size=1).total_rows or 0)
+
+
+def stream_query_rows(sql: str, page_size: int = 10000):
+    """Return (columns, row iterator) without loading the full result into memory."""
+    result = _run_export_query(sql, page_size=page_size)
+
+    columns = [
+        field.name
+        for field in result.schema
+    ]
+
+    return columns, (tuple(row.values()) for row in result)

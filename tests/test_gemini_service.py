@@ -5,6 +5,7 @@ from unittest.mock import patch
 from gemini_service import (
     OUT_OF_SCOPE_CLARIFICATION,
     _build_answer_prompt,
+    extract_export_analysis_question,
     generate_sql,
     translate_texts,
     translate_questions_to_arabic,
@@ -93,6 +94,35 @@ class GenerateSqlTests(unittest.TestCase):
         self.assertEqual(translate_texts(["اتحاد كرة القدم"], "en"), ["Football federation"])
         prompt = generate_content.call_args.kwargs["contents"]
         self.assertIn("natural English", prompt)
+
+    @patch("gemini_service.client.models.generate_content")
+    def test_export_request_with_new_query_returns_only_the_data_request(self, generate_content):
+        generate_content.return_value = SimpleNamespace(
+            text='{"analysis_question": "Show registrations grouped by sport and gender"}'
+        )
+
+        result = extract_export_analysis_question(
+            "Show registrations grouped by sport and gender, and export them to Excel.", None
+        )
+
+        self.assertEqual(result, "Show registrations grouped by sport and gender")
+
+    @patch("gemini_service.client.models.generate_content")
+    def test_export_request_about_earlier_results_returns_none(self, generate_content):
+        generate_content.return_value = SimpleNamespace(text='```json\n{"analysis_question": null}\n```')
+
+        self.assertIsNone(
+            extract_export_analysis_question("Export these results to Excel.", "Which sports are biggest?")
+        )
+
+    @patch("gemini_service.client.models.generate_content")
+    def test_export_request_prompt_contains_only_the_messages_never_result_rows(self, generate_content):
+        generate_content.return_value = SimpleNamespace(text='{"analysis_question": "  "}')
+
+        self.assertIsNone(extract_export_analysis_question("Export the data.", "Which sports?"))
+        prompt = generate_content.call_args.kwargs["contents"]
+        self.assertIn("Export the data.", prompt)
+        self.assertIn("Which sports?", prompt)
 
 
 if __name__ == "__main__":

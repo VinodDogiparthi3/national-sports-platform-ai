@@ -32,6 +32,41 @@ def get_out_of_scope_clarification(language: str) -> str:
     return OUT_OF_SCOPE_CLARIFICATIONS.get(language, OUT_OF_SCOPE_CLARIFICATION)
 
 
+def _parse_json_response(text: str):
+    text = text.strip()
+    fenced_json = re.fullmatch(
+        r"```(?:json)?\s*(.*?)\s*```",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return json.loads(fenced_json.group(1).strip() if fenced_json else text)
+
+
+def extract_export_analysis_question(question: str, previous_question: str | None) -> str | None:
+    """Return the data request inside an Excel export message, or None when it only refers to earlier results."""
+    prompt = f"""
+The user wants an Excel export in a National Sports Platform data chat.
+Decide whether the message describes a NEW data request or only asks to export previously shown results.
+
+Return only JSON: {{"analysis_question": <string or null>}}
+- Return null when the message only asks to export/download/generate a file for "this", "these", "the above", "the previous", "the complete data", or gives no data description at all.
+- Otherwise return the data request alone, in the user's language, with every Excel/export/download/format wording removed.
+- Do not answer the question and do not add details the user did not state.
+
+Previous question in this conversation: {json.dumps(previous_question, ensure_ascii=False)}
+User message: {json.dumps(question, ensure_ascii=False)}
+"""
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=prompt,
+    )
+    result = _parse_json_response(response.text)
+    analysis_question = result.get("analysis_question") if isinstance(result, dict) else None
+    if isinstance(analysis_question, str) and analysis_question.strip():
+        return analysis_question.strip()
+    return None
+
+
 def translate_texts(texts: list[str], target_language: str) -> list[str]:
     if not texts:
         return []
@@ -53,16 +88,7 @@ Texts:
         model=MODEL,
         contents=prompt,
     )
-    text = response.text.strip()
-    fenced_json = re.fullmatch(
-        r"```(?:json)?\s*(.*?)\s*```",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if fenced_json:
-        text = fenced_json.group(1).strip()
-
-    translations = json.loads(text)
+    translations = _parse_json_response(response.text)
     if (
         not isinstance(translations, list)
         or len(translations) != len(texts)

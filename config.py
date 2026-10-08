@@ -26,3 +26,14 @@ MAX_BYTES_PROCESSED = int(
         str(250 * 1024 * 1024),
     )
 )
+
+
+# -------------------------
+# Excel export
+# -------------------------
+
+EXPORT_MAX_ROWS = int(os.getenv("EXPORT_MAX_ROWS", "500000"))
+EXPORT_CONTEXT_TTL_SECONDS = int(os.getenv("EXPORT_CONTEXT_TTL_SECONDS", str(24 * 3600)))
+EXPORT_DOWNLOAD_TTL_SECONDS = int(os.getenv("EXPORT_DOWNLOAD_TTL_SECONDS", "3600"))
+# Must be identical on every Cloud Run instance, otherwise tokens only work on the issuing instance.
+EXPORT_SECRET_KEY = os.getenv("EXPORT_SECRET_KEY")

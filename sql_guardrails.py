@@ -37,7 +37,8 @@ def get_allowed_columns() -> set[str]:
     }
 
 
-def validate_sql(sql: str) -> str:
+def validate_sql(sql: str, row_limit: int | None = 100) -> str:
+    """Validate a generated query; row_limit=None keeps its own LIMIT (used for exports)."""
 
     # -------------------------
     # Parse BigQuery SQL
@@ -156,13 +157,16 @@ def validate_sql(sql: str) -> str:
             )
 
     # -------------------------
-    # LIMIT <= 100
+    # LIMIT <= row_limit
     # -------------------------
     limit = expression.args.get("limit")
 
-    if limit is None:
+    if row_limit is None:
+        pass
 
-        expression = expression.limit(100)
+    elif limit is None:
+
+        expression = expression.limit(row_limit)
 
     else:
 
@@ -171,11 +175,11 @@ def validate_sql(sql: str) -> str:
                 limit.expression.name
             )
 
-            if limit_value > 100:
+            if limit_value > row_limit:
                 expression.set(
                     "limit",
                     exp.Limit(
-                        expression=exp.Literal.number(100)
+                        expression=exp.Literal.number(row_limit)
                     )
                 )
 

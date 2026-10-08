@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { streamQuestion, translateChatTexts } from "./api";
+import { getLatestExportContext, resolveDownloadUrl } from "./exportContext";
 import {
   ArrowUpRight,
   ArrowUp,
@@ -41,6 +42,20 @@ const sidebarItems = [
 ];
 const quickInsightIcons = [BarChart3, TrendingUp, UsersRound, MapPin];
 const processingStatusIndex = { understanding: 0, analyzing: 1, preparing: 2 };
+
+function splitResultsMarkdown(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const resultsStartIndex = lines.findIndex((line) =>
+    /^\s{0,3}(?:[-*+]\s+|[\d٠-٩۰-۹]+[.)]\s+|\|)/.test(line),
+  );
+
+  if (resultsStartIndex === -1) return null;
+
+  return {
+    summary: lines.slice(0, resultsStartIndex).join("\n").trim(),
+    results: lines.slice(resultsStartIndex).join("\n").trim(),
+  };
+}
 
 const interfaceText = {
   en: {
@@ -95,6 +110,7 @@ const interfaceText = {
     assistant: "Sports Platform AI",
     thinking: "Checking the platform data…",
     genericError: "Unable to process the request. Please try again.",
+    downloadExcel: "Download Excel (.xlsx)",
     processingSteps: ["Understanding your question…", "Analyzing sports data…", "Preparing your answer…"],
     inputPlaceholder: "Ask anything about National Sports Platform data...",
     inputLabel: "Ask a question",
@@ -157,6 +173,7 @@ const interfaceText = {
     assistant: "مساعد المنصة الرياضية",
     thinking: "جارٍ التحقق من بيانات المنصة…",
     genericError: "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى.",
+    downloadExcel: "تنزيل Excel (.xlsx)",
     processingSteps: ["جارٍ فهم سؤالك…", "جارٍ تحليل البيانات الرياضية…", "جارٍ إعداد الإجابة…"],
     inputPlaceholder: "اسأل عن أي بيانات في المنصة الوطنية للرياضة...",
     inputLabel: "اكتب سؤالاً",
@@ -511,6 +528,8 @@ function App() {
 
     try {
       let streamedText = "";
+      let exportResult = null;
+      let exportContext = null;
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
@@ -519,11 +538,16 @@ function App() {
 
       await streamQuestion(question, language, (event, payload) => {
         if (event === "status") updateAssistant({ status: payload.step });
+        if (event === "export") {
+          exportResult = payload;
+          updateAssistant({ export: payload });
+        }
+        if (event === "context") exportContext = payload.export_context;
         if (event === "token") {
           streamedText += payload.text;
           updateAssistant({ text: streamedText });
         }
-      });
+      }, getLatestExportContext(messages));
 
       const translatedQuestion = await arabicQuestionTranslation;
       const finalUserMessages = userMessages.map((message) => (
@@ -540,6 +564,8 @@ function App() {
         text: streamedText,
         streaming: false,
         status: null,
+        ...(exportResult ? { export: exportResult } : {}),
+        ...(exportContext ? { exportContext } : {}),
       };
       const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -833,7 +859,13 @@ function App() {
                   {message.role === "assistant" && (
                     <div className="assistant-avatar"><Bot size={17} /></div>
                   )}
-                  <div className="message-content">
+                  {(() => {
+                    const responseText = message.displayTranslations?.[language] || message.text;
+                    const resultSections = message.role === "assistant" && message.exportContext
+                      ? splitResultsMarkdown(responseText)
+                      : null;
+
+                    return <div className={`message-content ${resultSections ? "has-results" : ""}`}>
                     <span className="message-author">{message.role === "user" ? ui.you : ui.assistant}</span>
                     <div className={`message-bubble ${message.role} ${message.error ? "has-error" : ""}`} dir="auto">
                       {message.role === "assistant" && message.streaming && !message.text ? (
@@ -842,9 +874,22 @@ function App() {
                           <p>{ui.processingSteps[processingStatusIndex[message.status] ?? 0]}</p>
                         </div>
                       ) : message.role === "assistant" ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {message.displayTranslations?.[language] || message.text}
-                        </ReactMarkdown>
+                        resultSections ? (
+                          <>
+                            {resultSections.summary && (
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {resultSections.summary}
+                              </ReactMarkdown>
+                            )}
+                            <div className="results-content" dir="auto">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {resultSections.results}
+                              </ReactMarkdown>
+                            </div>
+                          </>
+                        ) : (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{responseText}</ReactMarkdown>
+                        )
                       ) : (
                         message.displayTranslations?.[language]
                         || (language === "ar" ? message.arabicText : null)
@@ -853,8 +898,19 @@ function App() {
                       {message.role === "assistant" && message.streaming && message.text && (
                         <span className="stream-cursor" aria-hidden="true" />
                       )}
+                      {message.role === "assistant" && message.export?.download_url && (
+                        <a
+                          className="export-download"
+                          href={resolveDownloadUrl(API_BASE_URL, message.export.download_url)}
+                          download
+                        >
+                          <span aria-hidden="true">📊</span>
+                          <strong>{ui.downloadExcel}</strong>
+                        </a>
+                      )}
                     </div>
-                  </div>
+                    </div>;
+                  })()}
                 </div>
               ))}
               <div ref={messagesEndRef} />

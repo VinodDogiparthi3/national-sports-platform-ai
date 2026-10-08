@@ -1,4 +1,5 @@
 from difflib import get_close_matches
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -7,13 +8,30 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
-from bigquery_database import execute_sql
+from bigquery_database import execute_sql, get_export_row_count, stream_query_rows
+from config import (
+    EXPORT_CONTEXT_TTL_SECONDS,
+    EXPORT_DOWNLOAD_TTL_SECONDS,
+    EXPORT_MAX_ROWS,
+)
+from excel_export import (
+    XLSX_MEDIA_TYPE,
+    ExportTokenError,
+    ExportTooLargeError,
+    decrypt_token,
+    encrypt_token,
+    friendly_header,
+    is_excel_export_request,
+    write_workbook,
+)
 from gemini_service import (
     OUT_OF_SCOPE_CLARIFICATION,
+    extract_export_analysis_question,
     generate_sql,
     generate_answer,
     generate_answer_stream,
@@ -60,6 +78,7 @@ app.add_middleware(
 class QuestionRequest(BaseModel):
     question: str
     language: Literal["en", "ar"] = "en"
+    export_context: str | None = Field(default=None, max_length=20000)
 
 
 class QuestionTranslationRequest(BaseModel):
@@ -172,6 +191,162 @@ def is_metadata_question(question: str) -> bool:
     return any(marker in normalized for marker in METADATA_QUESTION_MARKERS)
 
 
+EXPORT_MESSAGES = {
+    "en": {
+        "ready": "Your Excel report is ready.",
+        "no_context": (
+            "Which NSP data would you like to export to Excel? Ask a data question first, "
+            "for example \"How many registrations are there for each sport?\", and then request the export."
+        ),
+        "no_data": "No matching data was found, so no Excel file was created.",
+        "too_large": (
+            "This export has {rows:,} rows, which is above the {limit:,}-row limit. "
+            "Please narrow the request, for example by sport, region, or year."
+        ),
+        "too_large_query": (
+            "This export is too large to process. "
+            "Please narrow the request, for example by sport, region, or year."
+        ),
+        "failed": "I couldn't generate the Excel file. Please try again.",
+    },
+    "ar": {
+        "ready": "تقرير Excel جاهز.",
+        "no_context": (
+            "ما بيانات المنصة الوطنية للرياضة (NSP) التي تريد تصديرها إلى Excel؟ "
+            "اطرح سؤالاً عن البيانات أولاً، مثل «كم عدد التسجيلات لكل رياضة؟»، ثم اطلب تصديرها."
+        ),
+        "no_data": "لم يتم العثور على بيانات مطابقة، لذلك لم يتم إنشاء ملف Excel.",
+        "too_large": (
+            "يحتوي هذا التصدير على {rows:,} صفًا، وهو يتجاوز الحد المسموح به ({limit:,} صف). "
+            "يرجى تضييق الطلب، مثلًا حسب الرياضة أو المنطقة أو السنة."
+        ),
+        "too_large_query": (
+            "حجم هذا التصدير كبير جدًا للمعالجة. "
+            "يرجى تضييق الطلب، مثلًا حسب الرياضة أو المنطقة أو السنة."
+        ),
+        "failed": "تعذر إنشاء ملف Excel. يرجى المحاولة مرة أخرى.",
+    },
+}
+
+
+def _export_context_token(sql: str, question: str) -> str:
+    return encrypt_token({"kind": "context", "sql": sql, "question": question})
+
+
+def _localized_headers(columns: list[str], language: str) -> list[str]:
+    headers = [friendly_header(column) for column in columns]
+    if language == "ar":
+        try:
+            translated = translate_texts(headers, "ar")
+            if len(translated) == len(headers):
+                return translated
+        except Exception as e:
+            print("\nERROR TRANSLATING EXPORT HEADERS:", type(e).__name__, str(e))
+    return headers
+
+
+def _remove_file(path: str) -> None:
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def _excel_export_events(request: QuestionRequest, response_language: str):
+    """Handle an Excel export request: reuse the previous validated query or run the one in the message."""
+    messages = EXPORT_MESSAGES[response_language]
+    done = _sse_event("done", {"question": request.question})
+
+    try:
+        context = None
+        if request.export_context:
+            try:
+                context = decrypt_token(
+                    request.export_context, EXPORT_CONTEXT_TTL_SECONDS, "context"
+                )
+            except ExportTokenError:
+                context = None
+
+        try:
+            analysis_question = extract_export_analysis_question(
+                request.question, context["question"] if context else None
+            )
+        except Exception as e:
+            print("\nERROR SPLITTING EXPORT REQUEST:", type(e).__name__, str(e))
+            analysis_question = None
+
+        new_context_sql = None
+        if analysis_question:
+            if is_metadata_question(analysis_question):
+                yield _sse_event("token", {"text": get_out_of_scope_clarification(response_language)})
+                yield done
+                return
+
+            generated_sql = generate_sql(analysis_question, response_language)
+            if generated_sql.upper().startswith("CLARIFICATION:"):
+                clarification = generated_sql[len("CLARIFICATION:"):].strip()
+                yield _sse_event(
+                    "token",
+                    {"text": clarification or get_out_of_scope_clarification(response_language)},
+                )
+                yield done
+                return
+            source_sql = new_context_sql = generated_sql
+        elif context:
+            source_sql = context["sql"]
+        else:
+            yield _sse_event("token", {"text": messages["no_context"]})
+            yield done
+            return
+
+        try:
+            export_sql = validate_sql(source_sql, row_limit=None)
+        except ValueError:
+            yield _sse_event("token", {"text": get_out_of_scope_clarification(response_language)})
+            yield done
+            return
+
+        yield _sse_event("status", {"step": "analyzing"})
+        try:
+            row_count = get_export_row_count(export_sql)
+        except ValueError:
+            yield _sse_event("token", {"text": messages["too_large_query"]})
+            yield done
+            return
+
+        if row_count == 0:
+            yield _sse_event("token", {"text": messages["no_data"]})
+            yield done
+            return
+        if row_count > EXPORT_MAX_ROWS:
+            yield _sse_event(
+                "token",
+                {"text": messages["too_large"].format(rows=row_count, limit=EXPORT_MAX_ROWS)},
+            )
+            yield done
+            return
+
+        download_token = encrypt_token(
+            {"kind": "download", "sql": export_sql, "language": response_language}
+        )
+        yield _sse_event("token", {"text": messages["ready"]})
+        yield _sse_event(
+            "export",
+            {"download_url": f"/exports/{download_token}", "row_count": row_count},
+        )
+        if new_context_sql:
+            yield _sse_event(
+                "context",
+                {"export_context": _export_context_token(new_context_sql, analysis_question)},
+            )
+        yield done
+
+    except Exception as e:
+        print("\nERROR IN EXCEL EXPORT:")
+        print(type(e).__name__)
+        print(str(e))
+        yield _sse_event("token", {"text": messages["failed"]})
+        yield done
+
+
 # --------------------------------------------------
 # API Endpoints
 # --------------------------------------------------
@@ -241,6 +416,50 @@ def translate_chat_texts(request: TextTranslationRequest):
             status_code=502,
             detail="Conversation translation is temporarily unavailable.",
         )
+
+
+@app.get("/exports/{token}")
+def download_excel_export(token: str):
+    try:
+        payload = decrypt_token(token, EXPORT_DOWNLOAD_TTL_SECONDS, "download")
+    except ExportTokenError:
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "This download link is invalid or has expired. Please request the export again. "
+                "رابط التنزيل غير صالح أو انتهت صلاحيته. يرجى طلب التصدير مرة أخرى."
+            ),
+        )
+
+    language = "ar" if payload.get("language") == "ar" else "en"
+    path = None
+    try:
+        sql = validate_sql(payload["sql"], row_limit=None)
+        columns, rows = stream_query_rows(sql)
+        path, _ = write_workbook(
+            _localized_headers(columns, language),
+            rows,
+            language=language,
+            max_rows=EXPORT_MAX_ROWS,
+        )
+    except ExportTooLargeError:
+        raise HTTPException(status_code=413, detail=EXPORT_MESSAGES[language]["too_large_query"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail=EXPORT_MESSAGES[language]["too_large_query"])
+    except Exception as e:
+        print("\nERROR IN /exports:")
+        print(type(e).__name__)
+        print(str(e))
+        raise HTTPException(status_code=500, detail=EXPORT_MESSAGES[language]["failed"])
+
+    filename = datetime.now(timezone.utc).strftime("NSP_Report_%Y%m%d_%H%M%S.xlsx")
+    return FileResponse(
+        path,
+        media_type=XLSX_MEDIA_TYPE,
+        filename=filename,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        background=BackgroundTask(_remove_file, path),
+    )
 
 
 @app.post("/ask")
@@ -345,6 +564,10 @@ def ask_stream(request: QuestionRequest):
                 yield _sse_event("done", {"question": request.question})
                 return
 
+            if is_excel_export_request(request.question):
+                yield from _excel_export_events(request, response_language)
+                return
+
             if is_metadata_question(request.question):
                 yield _sse_event("token", {"text": clarification})
                 yield _sse_event("done", {"question": request.question})
@@ -386,6 +609,10 @@ def ask_stream(request: QuestionRequest):
             ):
                 yield _sse_event("token", {"text": text})
 
+            yield _sse_event(
+                "context",
+                {"export_context": _export_context_token(generated_sql, request.question)},
+            )
             yield _sse_event("done", {"question": request.question})
 
         except ValueError as e:

@@ -1,15 +1,15 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
+  import.meta.env?.VITE_API_BASE_URL ||
+  (import.meta.env?.DEV ? "http://127.0.0.1:8000" : "");
 
-export async function streamQuestion(question, language, onEvent) {
+export async function streamQuestion(question, language, onEvent, exportContext = null) {
   const response = await fetch(`${API_BASE_URL}/ask/stream`, {
     method: "POST",
     headers: {
       Accept: "text/event-stream",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ question, language }),
+    body: JSON.stringify({ question, language, export_context: exportContext }),
   });
 
   if (!response.ok || !response.body) {
