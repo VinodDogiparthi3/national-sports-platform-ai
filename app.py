@@ -35,9 +35,22 @@ from gemini_service import (
     generate_sql,
     generate_answer,
     generate_answer_stream,
+    generate_nafes_answer,
+    generate_nafes_sql,
     get_out_of_scope_clarification,
     translate_texts,
     translate_questions_to_arabic,
+)
+from nafes_service import (
+    NafesQuestionError,
+    build_nafes_data_note,
+    execute_nafes_sql,
+    extract_facility_id,
+    extract_window_days,
+    get_nafes_data_quality,
+    is_nafes_question,
+    is_pending_request_question,
+    redact_facility_id,
 )
 from sql_guardrails import validate_sql
 
@@ -94,6 +107,44 @@ def get_response_language(question: str, language: str) -> str:
     if language == "ar" or re.search(r"[\u0600-\u06ff]", question):
         return "ar"
     return "en"
+
+
+def _answer_nafes_question(question: str, language: str) -> str:
+    if is_pending_request_question(question):
+        return (
+            "Pending request statuses have not been confirmed for this POC. "
+            "I can show requests grouped by their recorded status instead."
+            if language == "en"
+            else "لم يتم اعتماد تعريف لحالات الطلبات قيد الانتظار في هذا النموذج. "
+            "يمكنني عرض الطلبات مجمعة حسب حالتها المسجلة بدلاً من ذلك."
+        )
+
+    facility_context = re.search(
+        r"\bfacility\s*(?:id|identifier)\b|معرف\s+المنشأة|رقم\s+المنشأة",
+        question,
+        re.IGNORECASE,
+    )
+    try:
+        extract_window_days(question)
+    except NafesQuestionError as exc:
+        return str(exc) if language == "en" else "يرجى اختيار فترة بين يوم واحد و3650 يومًا."
+
+    if facility_context and not extract_facility_id(question):
+        return (
+            "Please include a facility ID, for example: 'Show activity for facility ID <ID>'."
+            if language == "en"
+            else "يرجى تضمين معرف المنشأة، مثال: «اعرض النشاط لمعرف المنشأة <ID>»."
+        )
+
+    generated_sql = generate_nafes_sql(redact_facility_id(question), language)
+    if generated_sql.upper().startswith("CLARIFICATION:"):
+        answer = generated_sql[len("CLARIFICATION:"):].strip()
+        return answer or get_out_of_scope_clarification(language)
+
+    _, columns, rows = execute_nafes_sql(generated_sql, question)
+    quality = get_nafes_data_quality()
+    answer = generate_nafes_answer(question, columns, rows, language)
+    return f"{answer}\n\n{build_nafes_data_note(quality, language)}"
 
 
 def get_greeting_response(question: str, language: str = "en") -> str | None:
@@ -481,6 +532,12 @@ def ask(request: QuestionRequest):
                 "answer": clarification,
             }
 
+        if is_nafes_question(request.question):
+            return {
+                "question": request.question,
+                "answer": _answer_nafes_question(request.question, response_language),
+            }
+
         # 1. Natural language -> BigQuery SQL
         generated_sql = generate_sql(request.question, response_language)
 
@@ -570,6 +627,14 @@ def ask_stream(request: QuestionRequest):
 
             if is_metadata_question(request.question):
                 yield _sse_event("token", {"text": clarification})
+                yield _sse_event("done", {"question": request.question})
+                return
+
+            if is_nafes_question(request.question):
+                yield _sse_event("status", {"step": "analyzing"})
+                answer = _answer_nafes_question(request.question, response_language)
+                yield _sse_event("status", {"step": "preparing"})
+                yield _sse_event("token", {"text": answer})
                 yield _sse_event("done", {"question": request.question})
                 return
 

@@ -61,6 +61,40 @@ def execute_sql(sql: str):
     return columns, rows
 
 
+def execute_sql_with_parameters(
+    sql: str,
+    query_parameters: list[bigquery.ScalarQueryParameter],
+    *,
+    maximum_bytes_billed: int,
+    max_results: int = 100,
+):
+    """Execute a parameterized read-only query with its own explicit byte cap."""
+    dry_run_config = bigquery.QueryJobConfig(
+        dry_run=True,
+        use_query_cache=False,
+        query_parameters=query_parameters,
+    )
+    dry_run = client.query(sql, job_config=dry_run_config)
+    bytes_processed = dry_run.total_bytes_processed or 0
+    if bytes_processed > maximum_bytes_billed:
+        raise ValueError(
+            "Query exceeds the configured "
+            f"{maximum_bytes_billed:,}-byte processing limit. "
+            f"Estimated bytes: {bytes_processed}"
+        )
+
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=query_parameters,
+        maximum_bytes_billed=maximum_bytes_billed,
+        use_query_cache=True,
+    )
+    query_job = client.query(sql, job_config=job_config)
+    result = query_job.result(max_results=max_results)
+    columns = [field.name for field in result.schema]
+    rows = [tuple(row.values()) for row in result]
+    return columns, rows
+
+
 def _run_export_query(sql: str, page_size: int):
     # Same byte guard as normal answers; the query cache makes the later download re-run cheap.
     dry_run_sql(sql)

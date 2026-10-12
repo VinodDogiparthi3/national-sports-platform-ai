@@ -19,7 +19,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY app.py config.py bigquery_database.py excel_export.py gemini_service.py schema_metadata.py sql_guardrails.py ./
+COPY app.py config.py bigquery_database.py excel_export.py gemini_service.py nafes_schema.py nafes_service.py schema_metadata.py sql_guardrails.py ./
 COPY --from=frontend-build /frontend/dist ./frontend/dist
 
 ENV PORT=8080

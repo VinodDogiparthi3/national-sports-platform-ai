@@ -4,6 +4,7 @@ import re
 from google import genai
 
 from config import PROJECT_ID, LOCATION, MODEL
+from nafes_schema import get_nafes_schema_prompt
 from schema_metadata import get_bigquery_schema
 
 
@@ -157,6 +158,76 @@ Question:
     return _clean_sql_output(response.text)
 
 
+def generate_nafes_sql(question: str, language: str = "en") -> str:
+        response_language = "Arabic" if language == "ar" else "English"
+        prompt = f"""
+You are generating read-only BigQuery Standard SQL for the Nafes facility
+licensing and request follow-up POC.
+
+Approved data contract:
+{get_nafes_schema_prompt()}
+
+SQL rules:
+- Return one SELECT statement only, with fully qualified approved views.
+- Never use SELECT * or any column not in the approved schema.
+- For license detail, create license_by_id grouped by License_ID. Project
+    License_ID as _license_id inside the CTE. Return it only as license_id when
+    the user asks to list licenses; never return it for aggregate questions.
+    Calculate facility_id_variants, expiry_date_variants,
+    license_status_variants, and license_type_variants with null-aware distinct
+    counts. Only use ANY_VALUE after checking its variant count. Then create
+    unambiguous_licenses selecting _license_id, facility_id, license_expiry_date,
+    license_source_status, license_type_name, and all four variant fields,
+    filtered with AND so every variant count equals 1.
+- For requests, create request_by_id grouped by Request_ID. Project Request_ID
+    only as _request_id inside the CTE; never return an identifier. Calculate
+    facility_id_variants, request_status_variants, and request_date_variants with
+    null-aware distinct counts. Then create unambiguous_requests selecting
+    _request_id, facility_id, request_date, request_status and the three variant
+    fields, filtered with AND so every variant count equals 1.
+- Aggregate licenses and requests separately by facility before joining.
+- For two-view facility results, create licenses_by_facility from
+    unambiguous_licenses and requests_by_facility from unambiguous_requests;
+    in each, filter facility_id IS NOT NULL and TRIM(facility_id) != '', group
+    by facility_id, and count unique_license_count/associated_request_count.
+    LEFT JOIN those aggregate CTEs on facility_id; never join raw view rows.
+- Counts must count unique licenses/requests, not source rows.
+- Never imply a direct request-to-license relationship. Use facility-level
+    association only.
+- Keep License_Status_Name as the recorded source status. Calculate expiry
+    status separately; do not call a license "active" or a request "pending" based
+    on assumptions.
+- Any user-supplied facility ID must use @facility_id. Expiry-window logic must
+    use @window_days and CURRENT_DATE('UTC').
+- Use @freshness_threshold_days rather than hardcoding the request freshness
+    threshold. Derive latest_request_date from MAX(Request_Date).
+- Never join or group facility-level results using NULL or blank facility IDs.
+    For joins, require both facility IDs to be non-NULL and non-blank.
+- Keep results to approved display fields and aliases: facility_id, license_id,
+  unique_license_count, license_expiry_date, license_source_status,
+  calculated_expiry_status, conflicting_license_count,
+  associated_request_count, request_status, latest_request_date,
+  days_since_latest_request, data_freshness_warning, region_name, city_name,
+  license_type_name, facility_type_name, days_to_expiry.
+- For a license-list question, return a bounded detail list with facility_id,
+  _license_id AS license_id, license_type_name, license_expiry_date, and
+    calculated_expiry_status, sorted by expiry date. Because the query is filtered
+    to the requested next-date window, set calculated_expiry_status to the fixed
+    label 'Expiring Soon' for each returned row; do not label it merely valid or
+    not expired. Do not return license IDs for count-only questions.
+- Group request results by the exact recorded Request_Status_Name. Do not
+    classify statuses as pending, approved, rejected, or under review.
+- Do not hardcode the latest request date. Use MAX(Request_Date) and
+    CURRENT_DATE('UTC') to calculate freshness dynamically.
+- Add a reasonable LIMIT. Return SQL only; no markdown or explanation.
+
+Question in {response_language}:
+{question}
+"""
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        return _clean_sql_output(response.text)
+
+
 def _build_answer_prompt(question: str, columns, rows, language: str = "en") -> str:
     result_text = f"Columns: {columns}\n"
     response_language = "Arabic" if language == "ar" else "English"
@@ -208,6 +279,42 @@ def generate_answer(
         contents=prompt,
     )
 
+    return response.text.strip()
+
+
+def generate_nafes_answer(
+    question: str,
+    columns,
+    rows,
+    language: str = "en",
+) -> str:
+    response_language = "Arabic" if language == "ar" else "English"
+    prompt = f"""
+You are a business-friendly assistant for the National Sports Platform Nafes
+facility licensing and request follow-up POC.
+
+Answer the user's question using only the approved query results below.
+
+Question:
+{question}
+
+Approved results:
+Columns: {columns}
+{chr(10).join(str(row) for row in rows)}
+
+Rules:
+- Write in {response_language}.
+- Preserve facility IDs and recorded source status values exactly.
+- Keep source license status separate from calculated expiry status.
+- Do not infer that any request is pending, approved, rejected, or under review.
+- Describe requests only as associated facility requests; do not claim a request
+  created, renewed, or modified a license.
+- Do not invent facility names, dates, counts, status meanings, causes, or actions.
+- Do not reveal license/request IDs, contact details, account/CR data, addresses,
+  phone numbers, emails, or coordinates.
+- Be concise, use a heading and bullets where useful, and format counts clearly.
+"""
+    response = client.models.generate_content(model=MODEL, contents=prompt)
     return response.text.strip()
 
 
