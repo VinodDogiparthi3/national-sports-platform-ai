@@ -517,6 +517,7 @@ function App() {
       let streamedText = "";
       let exportResult = null;
       let exportContext = null;
+      let source = null;
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
@@ -530,6 +531,10 @@ function App() {
           updateAssistant({ export: payload });
         }
         if (event === "context") exportContext = payload.export_context;
+        if (event === "source") {
+          source = payload;
+          updateAssistant({ source: payload });
+        }
         if (event === "token") {
           streamedText += payload.text;
           updateAssistant({ text: streamedText });
@@ -553,6 +558,7 @@ function App() {
         status: null,
         ...(exportResult ? { export: exportResult } : {}),
         ...(exportContext ? { exportContext } : {}),
+        ...(source ? { source } : {}),
       };
       const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -921,6 +927,16 @@ function App() {
                           <span aria-hidden="true">📊</span>
                           <strong>{ui.downloadExcel}</strong>
                         </a>
+                      )}
+                      {message.role === "assistant" && message.source && (
+                        <details className="source-details">
+                          <summary>{message.source.display_name}</summary>
+                          <dl>
+                            <dt>Dataset</dt><dd>{message.source.dataset}</dd>
+                            <dt>View</dt><dd>{message.source.view}</dd>
+                          </dl>
+                          <pre dir="ltr"><code>{message.source.sql}</code></pre>
+                        </details>
                       )}
                     </div>
                     </div>;

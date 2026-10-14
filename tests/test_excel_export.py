@@ -204,7 +204,7 @@ class ExportChatFlowTests(unittest.TestCase):
             for name, value in defaults.items()
         ]
         stack.append(patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql))
-        stack.append(patch("app.generate_sql", return_value=SQL))
+        stack.append(patch("app.generate_routed_sql", return_value=SQL))
         mocks = [context.start() for context in stack]
         for context in stack:
             self.addCleanup(context.stop)
@@ -221,7 +221,7 @@ class ExportChatFlowTests(unittest.TestCase):
 
     def test_data_answer_emits_context_for_follow_up_exports(self):
         with (
-            patch("app.generate_sql", return_value=SQL),
+            patch("app.generate_routed_sql", return_value=SQL),
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
             patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
             patch("app.generate_answer_stream", return_value=iter(["Counts"])),

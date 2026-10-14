@@ -6,7 +6,11 @@ import re
 from pathlib import Path
 from typing import Literal
 
+import sqlglot
 from fastapi import FastAPI, HTTPException
+from google.api_core import exceptions as api_exceptions
+from google.genai import errors as genai_errors
+from sqlglot import exp
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +36,7 @@ from excel_export import (
 from gemini_service import (
     OUT_OF_SCOPE_CLARIFICATION,
     extract_export_analysis_question,
-    generate_sql,
+    generate_routed_sql,
     generate_answer,
     generate_answer_stream,
     get_out_of_scope_clarification,
@@ -40,6 +44,7 @@ from gemini_service import (
     translate_questions_to_arabic,
 )
 from sql_guardrails import validate_sql
+from view_catalog import find_view
 
 
 # --------------------------------------------------
@@ -146,6 +151,67 @@ def get_greeting_response(question: str, language: str = "en") -> str | None:
     if closest_match:
         return arabic_greeting if language == "ar" else responses[closest_match[0]]
     return None
+
+
+def get_source_info(sql: str) -> dict | None:
+    """Dataset/view actually used by a validated query, for display in the UI."""
+    try:
+        tables = list(sqlglot.parse_one(sql, read="bigquery").find_all(exp.Table))
+    except Exception:
+        return None
+    views = []
+    for table in tables:
+        view = find_view(table.catalog or "", table.db or "", table.name or "")
+        if view and view not in views:
+            views.append(view)
+    if not views:
+        return None
+    first = views[0]
+    return {
+        "project": first.project,
+        "dataset": first.dataset,
+        "view": first.view,
+        "display_name": first.display_name,
+        "domain": first.domain,
+        "sql": sql,
+    }
+
+
+NO_DATA_MESSAGES = {
+    "en": "No matching data was found for this question.",
+    "ar": "لم يتم العثور على بيانات مطابقة لهذا السؤال.",
+}
+
+ERROR_MESSAGES = {
+    "permission": {
+        "en": "The service does not have permission to read the required BigQuery data.",
+        "ar": "لا تملك الخدمة صلاحية قراءة بيانات BigQuery المطلوبة.",
+    },
+    "gemini": {
+        "en": "The AI service is temporarily unavailable. Please try again.",
+        "ar": "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا. يرجى المحاولة مرة أخرى.",
+    },
+    "bigquery": {
+        "en": "The query could not be executed in BigQuery. Please rephrase your question.",
+        "ar": "تعذر تنفيذ الاستعلام في BigQuery. يرجى إعادة صياغة السؤال.",
+    },
+    "generic": {
+        "en": "Unable to process the request.",
+        "ar": "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى.",
+    },
+}
+
+
+def get_error_message(error: Exception, language: str) -> str:
+    if isinstance(error, api_exceptions.Forbidden):
+        kind = "permission"
+    elif isinstance(error, genai_errors.APIError):
+        kind = "gemini"
+    elif isinstance(error, api_exceptions.GoogleAPICallError):
+        kind = "bigquery"
+    else:
+        kind = "generic"
+    return ERROR_MESSAGES[kind]["ar" if language == "ar" else "en"]
 
 
 METADATA_QUESTION_MARKERS = (
@@ -280,7 +346,7 @@ def _excel_export_events(request: QuestionRequest, response_language: str):
                 yield done
                 return
 
-            generated_sql = generate_sql(analysis_question, response_language)
+            generated_sql = generate_routed_sql(analysis_question, response_language)
             if generated_sql.upper().startswith("CLARIFICATION:"):
                 clarification = generated_sql[len("CLARIFICATION:"):].strip()
                 yield _sse_event(
@@ -482,7 +548,7 @@ def ask(request: QuestionRequest):
             }
 
         # 1. Natural language -> BigQuery SQL
-        generated_sql = generate_sql(request.question, response_language)
+        generated_sql = generate_routed_sql(request.question, response_language)
 
         if generated_sql.upper().startswith("CLARIFICATION:"):
             clarification = generated_sql[len("CLARIFICATION:"):].strip()
@@ -505,6 +571,14 @@ def ask(request: QuestionRequest):
 
         # 3. Execute against BigQuery
         columns, rows = execute_sql(safe_sql)
+        source = get_source_info(safe_sql)
+
+        if not rows:
+            return {
+                "question": request.question,
+                "answer": NO_DATA_MESSAGES[response_language],
+                **({"source": source} if source else {}),
+            }
 
         # 4. Database results -> grounded natural-language answer
         answer = generate_answer(
@@ -518,6 +592,7 @@ def ask(request: QuestionRequest):
         return {
             "question": request.question,
             "answer": answer,
+            **({"source": source} if source else {}),
         }
 
     except ValueError as e:
@@ -537,11 +612,7 @@ def ask(request: QuestionRequest):
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى."
-                if response_language == "ar"
-                else "Unable to process the request."
-            ),
+            detail=get_error_message(e, response_language),
         )
 
 
@@ -573,7 +644,7 @@ def ask_stream(request: QuestionRequest):
                 yield _sse_event("done", {"question": request.question})
                 return
 
-            generated_sql = generate_sql(request.question, response_language)
+            generated_sql = generate_routed_sql(request.question, response_language)
 
             if generated_sql.upper().startswith("CLARIFICATION:"):
                 clarification = generated_sql[len("CLARIFICATION:"):].strip()
@@ -597,8 +668,15 @@ def ask_stream(request: QuestionRequest):
                 return
 
             yield _sse_event("status", {"step": "analyzing"})
+            source = get_source_info(safe_sql)
+            if source:
+                yield _sse_event("source", source)
 
             columns, rows = execute_sql(safe_sql)
+            if not rows:
+                yield _sse_event("token", {"text": NO_DATA_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
             yield _sse_event("status", {"step": "preparing"})
 
             for text in generate_answer_stream(
@@ -633,13 +711,7 @@ def ask_stream(request: QuestionRequest):
             print(str(e))
             yield _sse_event(
                 "error",
-                {
-                    "message": (
-                        "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى."
-                        if response_language == "ar"
-                        else "Unable to process the request."
-                    )
-                },
+                {"message": get_error_message(e, response_language)},
             )
 
     return StreamingResponse(

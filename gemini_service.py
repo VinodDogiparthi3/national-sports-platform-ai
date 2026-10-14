@@ -2,9 +2,12 @@ import json
 import re
 
 from google import genai
+import sqlglot
+from sqlglot import exp
 
 from config import PROJECT_ID, LOCATION, MODEL
 from schema_metadata import get_bigquery_schema
+from view_catalog import get_view
 
 
 client = genai.Client(
@@ -112,8 +115,25 @@ def _clean_sql_output(text: str) -> str:
     return fenced_sql.group(1).strip() if fenced_sql else text
 
 
-def generate_sql(question: str, language: str = "en") -> str:
-    schema = get_bigquery_schema()
+def generate_routed_sql(question: str, language: str = "en") -> str:
+    """Pick the best approved view for the question, then generate SQL for it (or a CLARIFICATION)."""
+    from view_router import route_question
+
+    route = route_question(question, language)
+    if route.view_id is None:
+        return f"CLARIFICATION: {route.clarification or get_out_of_scope_clarification(language)}"
+    view = get_view(route.view_id)
+    year = re.search(r"\b(?:19|20)\d{2}\b", question)
+    if view and year and view.available_years and int(year.group()) not in view.available_years:
+        available_years = ", ".join(str(value) for value in view.available_years)
+        if language == "ar":
+            return f"CLARIFICATION: بيانات هذا العرض متاحة للأعوام {available_years} فقط."
+        return f"CLARIFICATION: This view currently has data for {available_years} only."
+    return generate_sql(question, language, route.view_id)
+
+
+def generate_sql(question: str, language: str = "en", view_id: str | None = None) -> str:
+    schema = get_bigquery_schema(view_id) if view_id else get_bigquery_schema()
     response_language = "Arabic" if language == "ar" else "English"
     clarification = get_out_of_scope_clarification(language)
     prompt = f"""
@@ -133,9 +153,12 @@ Rules:
 - Only for supported NSP questions, generate BigQuery Standard SQL.
 - Only SELECT queries are allowed.
 - Use the fully qualified table name provided in the schema.
-- Use only tables and columns provided in the schema.
+- Use only tables and columns provided in the schema. Do not JOIN other tables or views.
+- Column names may be Arabic or English; use them exactly as listed, backtick-quoted.
+- For year-based questions, use the date/year column listed in the schema.
+- Unless the user asks for a specific top-N result, do not set a result limit below 100; the application enforces the 100-row maximum.
 - Do not invent tables or columns.
-- This dataset contains National Sports Platform data about registrations, athletes, sports, federations, regions, and participation.
+- The schema describes one National Sports Platform view; its business domain and description are given in the schema.
 - If the question is unrelated to this data or cannot be answered using the listed schema, return exactly: CLARIFICATION: {clarification}
 - Do not infer meanings for ambiguous code fields.
 - Interpret obvious spelling or typing errors only when the intended question is clear.
@@ -154,46 +177,162 @@ Question:
         contents=prompt,
     )
 
-    return _clean_sql_output(response.text)
+    sql = _clean_sql_output(response.text)
+    return _apply_population_row_semantics(sql, question, view_id)
 
 
-def _build_answer_prompt(question: str, columns, rows, language: str = "en") -> str:
-    result_text = f"Columns: {columns}\n"
-    response_language = "Arabic" if language == "ar" else "English"
+def _apply_population_row_semantics(sql: str, question: str, view_id: str | None) -> str:
+    if view_id != "population_estimates_statistics_view_01":
+        return sql
 
+    normalized_question = question.casefold()
+    asks_for_total = bool(
+        re.search(r"\b(total|overall)\s+population\b|\bpopulation\b.*\b(total|overall)\b", normalized_question)
+        or re.search(r"إجمالي السكان|مجموع السكان|السكان الإجمالي", normalized_question)
+    )
+    asks_by_age_group = bool(
+        re.search(r"\bby age groups?\b|\bfor each age group\b", normalized_question)
+        or re.search(r"حسب الفئات العمرية|حسب الفئة العمرية", normalized_question)
+    )
+    if not asks_for_total and not asks_by_age_group:
+        return sql
+
+    try:
+        query = sqlglot.parse_one(sql, read="bigquery")
+    except sqlglot.errors.ParseError:
+        return sql
+    if not isinstance(query, exp.Select):
+        return sql
+
+    age_group = exp.column("age_group", quoted=True)
+    if asks_by_age_group:
+        total_filter = exp.NEQ(this=age_group, expression=exp.Literal.string("Total"))
+    else:
+        total_filter = exp.EQ(this=age_group, expression=exp.Literal.string("Total"))
+
+    def strip_age_group_conditions(expression):
+        if isinstance(expression, exp.And):
+            left = strip_age_group_conditions(expression.this)
+            right = strip_age_group_conditions(expression.expression)
+            if left is None:
+                return right
+            if right is None:
+                return left
+            return exp.and_(left, right)
+        if any(column.name.casefold() == "age_group" for column in expression.find_all(exp.Column)):
+            return None
+        return expression
+
+    existing_where = query.args.get("where")
+    retained_where = strip_age_group_conditions(existing_where.this) if existing_where else None
+    query.set(
+        "where",
+        exp.Where(this=exp.and_(retained_where, total_filter) if retained_where else total_filter),
+    )
+    return query.sql(dialect="bigquery")
+
+
+def _metric_label(question: str, column: str, language: str) -> str:
+    normalized = question.casefold()
+    if language == "ar":
+        labels = (
+            (r"رياضي(?:ين|ون)?\s+النشط|الرياضيين النشطين", "الرياضيون النشطون"),
+            (r"الطلبات|طلبات", "إجمالي الطلبات"),
+            (r"الحجوزات|حجز", "إجمالي الحجوزات"),
+            (r"سجلات المنافسات|سجلات.*رياضي", "سجلات المنافسات"),
+            (r"محددات الصحة", "مؤشرات محددات الصحة"),
+            (r"الفئات العمرية|فئات عمرية", "عدد الفئات العمرية"),
+            (r"السكان", "إجمالي السكان"),
+            (r"الميزانية|الاعتماد", "إجمالي تخصيص الميزانية"),
+            (r"الحضور|حضور المنافس", "متوسط نسبة الحضور"),
+            (r"المشاركة", "متوسط المشاركة"),
+        )
+    else:
+        labels = (
+            (r"active\s+athlet", "Active Athletes"),
+            (r"facility\s+book|booking", "Total Bookings"),
+            (r"request", "Total Requests"),
+            (r"competition\s+record", "Competition Records"),
+            (r"population", "Total Population Estimate"),
+            (r"age\s+groups?", "Age Groups"),
+            (r"health\s+determinant", "Health Determinants"),
+            (r"budget\s+allocation|appropriation", "Total Budget Allocation"),
+            (r"attendance", "Average Attendance Rate"),
+            (r"participation", "Average Participation"),
+            (r"consumer\s+price\s+index", "Average Consumer Price Index"),
+            (r"workforce", "Total Workforce Statistics Entries"),
+            (r"community\s+sports", "Distinct Community Sports Indicators"),
+        )
+
+    for pattern, label in labels:
+        if re.search(pattern, normalized):
+            return label
+    if language == "ar" and re.search(r"[\u0600-\u06ff]", column):
+        return column
+    return re.sub(r"_+", " ", column).strip().title() or ("النتيجة" if language == "ar" else "Result")
+
+
+def _format_result_value(value, language: str) -> str:
+    if value is None:
+        return "غير محدد" if language == "ar" else "Not specified"
+    return str(value)
+
+
+def _column_label(column: str, language: str, question: str) -> str:
+    if column == "administrative_regions" and re.search(r"health|محددات الصحة", question, re.IGNORECASE):
+        return "المجموعة الواردة" if language == "ar" else "Reported Group"
+    arabic_labels = {
+        "age_group": "الفئة العمرية",
+        "administrative_regions": "المنطقة الإدارية",
+        "administrative_region": "المنطقة الإدارية",
+        "indicators_count": "عدد المؤشرات",
+        "health_indicators_count": "عدد مؤشرات الصحة",
+        "kpi_count": "عدد المؤشرات",
+        "indicator_count": "عدد المؤشرات",
+        "kpi_name": "المؤشر",
+        "metric": "المؤشر",
+        "count": "العدد",
+        "row_count": "عدد الصفوف",
+        "total": "الإجمالي",
+        "final_total": "الإجمالي النهائي",
+        "total_male": "إجمالي الذكور",
+        "total_female": "إجمالي الإناث",
+        "sports_competitions": "المنافسات الرياضية",
+        "year": "السنة",
+        "sport": "الرياضة",
+        "gender": "الجنس",
+        "actual": "القيمة الفعلية",
+        "forecast": "التوقعات",
+        "source_file": "ملف المصدر",
+        "sheet_name": "اسم الورقة",
+    }
+    if language == "ar" and column in arabic_labels:
+        return arabic_labels[column]
+    if language == "ar" and not re.search(r"[\u0600-\u06ff]", column):
+        return "القيمة"
+    return re.sub(r"_+", " ", column).strip().title()
+
+
+def _answer_markdown(question: str, columns, rows, language: str) -> str:
+    if not rows:
+        return "لم يتم العثور على بيانات مطابقة." if language == "ar" else "No matching data was found."
+
+    if len(rows) == 1 and len(columns) == 1:
+        label = _metric_label(question, columns[0], language)
+        value = _format_result_value(rows[0][0], language)
+        return f"### {label}\n\n**{label}:** {value}"
+
+    headers = [_column_label(column, language, question) for column in columns]
+    heading = "النتائج" if language == "ar" else "Results"
+    if len(rows) >= 100:
+        heading = "النتائج (بحد أقصى 100 صف)" if language == "ar" else "Results (capped at 100 rows)"
+    lines = [f"### {heading}", ""]
+    lines.append("| " + " | ".join(headers) + " |")
+    lines.append("| " + " | ".join("---" for _ in headers) + " |")
     for row in rows:
-        result_text += f"{row}\n"
-
-    return f"""
-You are a friendly AI assistant for the National Sports Platform.
-
-Answer the user's question using ONLY the database
-results provided below.
-
-User question:
-{question}
-
-Database results:
-{result_text}
-
-Rules:
-- Write all explanations, headings, and connective text in {response_language} only; do not include parallel translations.
-- Preserve database values such as names, sports, federations, nationalities, and group labels exactly as returned. Do not translate, transliterate, or modify those values.
-- Do not invent information.
-- Use only the database results.
-- Do not mention SQL, schemas, table or column names, row counts, or database internals.
-- Make the response clean, concise, and user-friendly.
-- Start directly with a short descriptive heading.
-- Use bullet points for grouped or categorical results.
-- Format numbers with commas when appropriate.
-- Replace null/None category values with "Not specified".
-- If a total can be calculated directly from the returned rows, show it as:
-    {"**إجمالي التسجيلات:**" if language == "ar" else "**Total Registrations:**"} <value>
-- Do not repeat information already shown in the bullet points.
-- Do not add an introductory sentence.
-- Do not add a concluding explanatory sentence.
-- Use Markdown formatting.
-"""
+        values = [_format_result_value(value, language).replace("|", "\\|").replace("\n", " ") for value in row]
+        lines.append("| " + " | ".join(values) + " |")
+    return "\n".join(lines)
 
 
 def generate_answer(
@@ -202,21 +341,8 @@ def generate_answer(
     rows,
     language: str = "en",
 ) -> str:
-    prompt = _build_answer_prompt(question, columns, rows, language)
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-    )
-
-    return response.text.strip()
+    return _answer_markdown(question, columns, rows, language)
 
 
 def generate_answer_stream(question: str, columns, rows, language: str = "en"):
-    prompt = _build_answer_prompt(question, columns, rows, language)
-
-    for chunk in client.models.generate_content_stream(
-        model=MODEL,
-        contents=prompt,
-    ):
-        if chunk.text:
-            yield chunk.text
+    yield _answer_markdown(question, columns, rows, language)

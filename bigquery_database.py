@@ -1,6 +1,6 @@
 from google.cloud import bigquery
 
-from config import BIGQUERY_PROJECT_ID, MAX_BYTES_PROCESSED
+from config import BIGQUERY_PROJECT_ID, MAX_BYTES_PROCESSED, QUERY_TIMEOUT_SECONDS
 
 client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
 
@@ -45,7 +45,8 @@ def execute_sql(sql: str):
     )
 
     result = query_job.result(
-        max_results=100
+        max_results=100,
+        timeout=QUERY_TIMEOUT_SECONDS,
     )
 
     columns = [
@@ -73,7 +74,7 @@ def _run_export_query(sql: str, page_size: int):
     return client.query(
         sql,
         job_config=job_config
-    ).result(page_size=page_size)
+    ).result(page_size=page_size, timeout=QUERY_TIMEOUT_SECONDS)
 
 
 def get_export_row_count(sql: str) -> int:

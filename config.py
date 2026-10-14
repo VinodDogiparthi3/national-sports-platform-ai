@@ -26,6 +26,8 @@ MAX_BYTES_PROCESSED = int(
         str(250 * 1024 * 1024),
     )
 )
+QUERY_TIMEOUT_SECONDS = int(os.getenv("BIGQUERY_QUERY_TIMEOUT_SECONDS", "60"))
+SCHEMA_CACHE_TTL_SECONDS = int(os.getenv("SCHEMA_CACHE_TTL_SECONDS", "3600"))
 
 
 # -------------------------

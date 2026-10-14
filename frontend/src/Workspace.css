@@ -184,6 +184,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .message-bubble th, .message-bubble td { padding: 8px 10px; border: 1px solid var(--line); text-align: start; }
 .message-bubble th { color: #34483c; background: var(--emerald-wash); font-weight: 700; }
 .message-bubble tr:nth-child(even) td { background: #faf9f4; }
+.source-details { margin-top: 10px; font-size: 12px; color: var(--primary-deep); }
+.source-details summary { cursor: pointer; font-weight: 600; }
+.source-details dl { margin: 6px 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+.source-details dt { opacity: .7; }
+.source-details dd { margin: 0; word-break: break-all; }
+.source-details pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; border-radius: 8px; background: var(--emerald-wash); white-space: pre-wrap; }
 .export-download { margin-top: 10px; padding: 9px 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #c8dfd1; border-radius: 8px; color: var(--primary-deep); background: var(--emerald-wash); font-size: 12px; text-decoration: none; transition: background .16s ease, transform .16s ease; }
 .export-download:hover { background: #d9eadf; transform: translateY(-1px); }
 .thinking-indicator { display: flex; align-items: center; gap: 4px; min-height: 32px; color: #77847c; }

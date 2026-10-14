@@ -17,7 +17,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_stream_endpoint_emits_status_sql_tokens_and_done(self):
         with (
-            patch("app.generate_sql", return_value=self.sql),
+            patch("app.generate_routed_sql", return_value=self.sql),
             patch("app.validate_sql", side_effect=lambda query: query),
             patch("app.execute_sql", return_value=(["sport", "total"], [("Football", 3)])),
             patch("app.generate_answer_stream", return_value=iter(["## Counts\n", "\nFootball: **3**"])),
@@ -34,7 +34,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_arabic_ui_and_question_stream_arabic_response(self):
         with (
-            patch("app.generate_sql", return_value=self.sql) as generate_sql,
+            patch("app.generate_routed_sql", return_value=self.sql) as generate_sql,
             patch("app.validate_sql", side_effect=lambda query: query),
             patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
             patch(
@@ -59,7 +59,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_english_ui_and_question_stream_english_response(self):
         with (
-            patch("app.generate_sql", return_value=self.sql),
+            patch("app.generate_routed_sql", return_value=self.sql),
             patch("app.validate_sql", side_effect=lambda query: query),
             patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
             patch(
@@ -86,7 +86,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_arabic_question_keeps_arabic_narrative_with_english_database_value(self):
         with (
-            patch("app.generate_sql", return_value=self.sql),
+            patch("app.generate_routed_sql", return_value=self.sql),
             patch("app.validate_sql", side_effect=lambda query: query),
             patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
             patch(
@@ -110,7 +110,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_returns_answer_without_generated_sql(self):
         with (
-            patch("app.generate_sql", return_value=self.sql),
+            patch("app.generate_routed_sql", return_value=self.sql),
             patch("app.validate_sql", side_effect=lambda query: query),
             patch("app.execute_sql", return_value=(["sport", "total"], [("Football", 3)])),
             patch("app.generate_answer", return_value="Legacy answer"),
@@ -172,7 +172,7 @@ class StreamingAskTests(unittest.TestCase):
         translate.assert_called_once_with(texts, "ar")
 
     def test_json_ask_clarifies_when_generated_query_has_no_table(self):
-        with patch("app.generate_sql", return_value="SELECT CURRENT_DATE()"):
+        with patch("app.generate_routed_sql", return_value="SELECT CURRENT_DATE()"):
             response = self.client.post("/ask", json={"question": "Tell me today's date"})
 
         self.assertEqual(response.status_code, 200)
@@ -180,7 +180,7 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
 
     def test_stream_ask_clarifies_when_generated_query_has_no_table(self):
-        with patch("app.generate_sql", return_value="SELECT CURRENT_DATE()"):
+        with patch("app.generate_routed_sql", return_value="SELECT CURRENT_DATE()"):
             response = self.client.post(
                 "/ask/stream",
                 json={"question": "Tell me today's date"},
@@ -201,7 +201,7 @@ class StreamingAskTests(unittest.TestCase):
         )
 
         for question in questions:
-            with self.subTest(question=question), patch("app.generate_sql") as generate_sql:
+            with self.subTest(question=question), patch("app.generate_routed_sql") as generate_sql:
                 response = self.client.post("/ask", json={"question": question})
 
             self.assertEqual(response.status_code, 200)
@@ -210,7 +210,7 @@ class StreamingAskTests(unittest.TestCase):
             generate_sql.assert_not_called()
 
     def test_stream_metadata_question_is_clarified_without_sql_generation(self):
-        with patch("app.generate_sql") as generate_sql:
+        with patch("app.generate_routed_sql") as generate_sql:
             response = self.client.post(
                 "/ask/stream",
                 json={"question": "What columns are available?"},
@@ -224,7 +224,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_clarifies_when_generated_query_uses_disallowed_table(self):
         query = "SELECT * FROM `other-project.other-dataset.other-table`"
-        with patch("app.generate_sql", return_value=query):
+        with patch("app.generate_routed_sql", return_value=query):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
 
         self.assertEqual(response.status_code, 200)
@@ -236,7 +236,7 @@ class StreamingAskTests(unittest.TestCase):
             f"{BIGQUERY_TABLE_ID}`"
         )
         with (
-            patch("app.generate_sql", return_value=query),
+            patch("app.generate_routed_sql", return_value=query),
             patch("sql_guardrails.get_allowed_columns", return_value={"sport"}),
         ):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
@@ -246,7 +246,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_hides_schema_validation_details(self):
         with (
-            patch("app.generate_sql", return_value="SELECT * FROM generated_query"),
+            patch("app.generate_routed_sql", return_value="SELECT * FROM generated_query"),
             patch(
                 "app.validate_sql",
                 side_effect=ValueError("Table is not allowed: information_schema.columns"),
@@ -260,7 +260,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_stream_ask_hides_schema_validation_details(self):
         with (
-            patch("app.generate_sql", return_value="SELECT * FROM generated_query"),
+            patch("app.generate_routed_sql", return_value="SELECT * FROM generated_query"),
             patch(
                 "app.validate_sql",
                 side_effect=ValueError("Table is not allowed: information_schema.columns"),

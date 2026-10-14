@@ -68,6 +68,28 @@ describe("parseResultCards", () => {
     });
   });
 
+  it("preserves exact decimal precision and a valid zero", () => {
+    const precise = parseResultCards("**Average Attendance Rate:** 0.5551325036207942");
+    const zero = parseResultCards("**Age Groups:** 0");
+
+    assert.equal(precise[0].value, "0.5551325036207942");
+    assert.equal(zero[0].value, "0");
+  });
+
+  it("renders every returned grouped row", () => {
+    const markdown = [
+      "| Region | Indicator Count |",
+      "| --- | --- |",
+      ...Array.from({ length: 35 }, (_, index) => `| Region ${index} | ${index + 1} |`),
+    ].join("\n");
+    const cards = parseResultCards(markdown, "Health determinants by region");
+
+    assert.equal(cards.length, 35);
+    assert.equal(cards[0].label, "Region 0");
+    assert.equal(cards[34].label, "Region 34");
+    assert.equal(cards[34].value, "35");
+  });
+
   it("supports Arabic values and sport names", () => {
     const cards = parseResultCards("- كرة القدم: ٢٥ لاعبًا", "إجمالي اللاعبين حسب الرياضة");
     assert.deepEqual(cards.map(({ icon, label }) => [icon, label]), [["⚽", "كرة القدم"]]);

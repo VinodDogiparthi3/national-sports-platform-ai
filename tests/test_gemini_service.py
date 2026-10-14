@@ -1,11 +1,15 @@
 import unittest
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from gemini_service import (
     OUT_OF_SCOPE_CLARIFICATION,
-    _build_answer_prompt,
+    _apply_population_row_semantics,
     extract_export_analysis_question,
+    generate_answer,
+    generate_answer_stream,
+    generate_routed_sql,
     generate_sql,
     translate_texts,
     translate_questions_to_arabic,
@@ -59,18 +63,92 @@ class GenerateSqlTests(unittest.TestCase):
         self.assertIn("Write any clarification in Arabic", prompt)
         self.assertIn("يرجى طرح سؤال يتعلق بالمنصة الوطنية للرياضة", prompt)
 
-    def test_arabic_answer_prompt_preserves_english_database_values(self):
-        prompt = _build_answer_prompt(
-            "ما الرياضة الأكثر تسجيلًا؟",
-            ["sport"],
-            [("Football",)],
+    def test_answer_preserves_bigquery_float_precision_and_context_label(self):
+        answer = generate_answer(
+            "What was the sports event attendance rate?",
+            ["average_attendance"],
+            [(0.5551325036207942,)],
+        )
+
+        self.assertIn("0.5551325036207942", answer)
+        self.assertIn("Average Attendance Rate", answer)
+
+    def test_answer_displays_valid_zero_and_decimal_values(self):
+        zero_answer = generate_answer("How many age groups?", ["age_groups_count"], [(0,)])
+        decimal_answer = generate_answer("What is the total?", ["total"], [(Decimal("0.123456789012345678"),)])
+
+        self.assertIn("**Age Groups:** 0", zero_answer)
+        self.assertIn("0.123456789012345678", decimal_answer)
+
+    def test_answer_uses_arabic_metric_labels(self):
+        answer = generate_answer("كم عدد الرياضيين النشطين؟", ["active_athletes_count"], [(128542,)], "ar")
+
+        self.assertIn("الرياضيون النشطون", answer)
+        self.assertIn("128542", answer)
+        self.assertNotIn("Total Registrations", answer)
+
+    def test_grouped_answer_renders_every_returned_row_in_arabic(self):
+        rows = [(f"منطقة {index:02d}", index) for index in range(35)]
+        answer = generate_answer("عدد المؤشرات حسب المنطقة", ["region", "indicator_count"], rows, "ar")
+
+        self.assertIn("### النتائج", answer)
+        for index in range(35):
+            self.assertIn(f"منطقة {index:02d}", answer)
+        self.assertIn("34", answer)
+
+    def test_arabic_grouped_headers_are_localized(self):
+        answer = generate_answer(
+            "كم عدد مؤشرات محددات الصحة حسب المنطقة الإدارية؟",
+            ["administrative_regions", "kpi_name", "kpi_count"],
+            [("Al-Jouf", "Physical activity", 2)],
             "ar",
         )
 
-        self.assertIn("in Arabic only", prompt)
-        self.assertIn("Do not translate, transliterate, or modify those values", prompt)
-        self.assertIn("Football", prompt)
-        self.assertIn("**إجمالي التسجيلات:**", prompt)
+        self.assertIn("المجموعة الواردة", answer)
+        self.assertIn("المؤشر", answer)
+        self.assertIn("عدد المؤشرات", answer)
+        self.assertIn("Al-Jouf", answer)
+
+    def test_grouped_answer_marks_the_100_row_cap(self):
+        rows = [(f"Region {index}", index) for index in range(100)]
+        answer = generate_answer("Results by region", ["region", "count"], rows)
+        streamed = "".join(generate_answer_stream("Results by region", ["region", "count"], rows, "ar"))
+
+        self.assertIn("### Results (capped at 100 rows)", answer)
+        self.assertIn("### النتائج (بحد أقصى 100 صف)", streamed)
+
+    def test_age_view_unavailable_year_returns_clarification_before_sql_generation(self):
+        route = SimpleNamespace(view_id="vw_health_determinants_statistics_publication", clarification=None)
+        with (
+            patch("view_router.route_question", return_value=route),
+            patch("gemini_service.generate_sql") as generate_sql,
+        ):
+            result = generate_routed_sql("كم عدد الفئات العمرية لعام 2024؟", "ar")
+
+        self.assertTrue(result.startswith("CLARIFICATION:"))
+        self.assertIn("2023", result)
+        generate_sql.assert_not_called()
+
+    def test_population_total_filters_to_total_row(self):
+        sql = "SELECT SUM(SAFE_CAST(`total_2024_final_total` AS INT64)) AS population FROM `project.dw_sharepoint_views.population_estimates_statistics_view_01`"
+        corrected = _apply_population_row_semantics(
+            sql,
+            "What is the total population estimate for 2024?",
+            "population_estimates_statistics_view_01",
+        )
+
+        self.assertIn("`age_group` = 'Total'", corrected)
+
+    def test_population_age_breakdown_excludes_total_row(self):
+        sql = "SELECT `age_group`, SUM(SAFE_CAST(`total_2024_final_total` AS INT64)) AS population FROM `project.dw_sharepoint_views.population_estimates_statistics_view_01` WHERE `age_group` = 'Total' GROUP BY `age_group`"
+        corrected = _apply_population_row_semantics(
+            sql,
+            "Show the population total for each age group in 2024",
+            "population_estimates_statistics_view_01",
+        )
+
+        self.assertIn("`age_group` <> 'Total'", corrected)
+        self.assertNotIn("`age_group` = 'Total'", corrected)
 
     @patch("gemini_service.client.models.generate_content")
     def test_arabic_question_translation_preserves_names(self, generate_content):

@@ -6,7 +6,8 @@ from config import (
     BIGQUERY_PROJECT_ID,
     BIGQUERY_TABLE_ID,
 )
-from schema_metadata import get_bigquery_schema
+from schema_metadata import get_view_columns
+from view_catalog import find_view, is_join_verified
 
 
 ALLOWED_PROJECT = BIGQUERY_PROJECT_ID
@@ -18,22 +19,12 @@ class OutOfScopeQueryError(ValueError):
     pass
 
 
-def get_allowed_columns() -> set[str]:
-    """
-    Get the approved columns dynamically from BigQuery metadata.
-    """
-    from google.cloud import bigquery
-
-    full_table_id = (
-        f"{BIGQUERY_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{BIGQUERY_TABLE_ID}"
-    )
-
-    client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
-    table = client.get_table(full_table_id)
-
+def get_allowed_columns(view_ids: set[str] | None = None) -> set[str]:
+    """Approved columns from cached BigQuery metadata for the given views (default: NSP)."""
     return {
-        field.name.lower()
-        for field in table.schema
+        name.lower()
+        for view_id in (view_ids or {BIGQUERY_TABLE_ID})
+        for name, _, _ in get_view_columns(view_id)
     }
 
 
@@ -83,43 +74,33 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
             "No table found in SQL query."
         )
 
+    used_views = set()
+
     for table in tables:
 
-        table_name = table.name.lower()
-
-        db_name = (
-            table.db.lower()
-            if table.db
-            else ""
+        approved = find_view(
+            table.catalog or "",
+            table.db or "",
+            table.name or "",
         )
 
-        catalog_name = (
-            table.catalog.lower()
-            if table.catalog
-            else ""
+        if approved is None:
+            raise OutOfScopeQueryError(
+                f"Table is not allowed: {table.catalog}.{table.db}.{table.name}"
+            )
+
+        used_views.add(approved.view)
+
+    # Never assume relationships between views.
+    if not is_join_verified(used_views):
+        raise OutOfScopeQueryError(
+            "Joining these views is not allowed: no verified relationship."
         )
-
-        if table_name != ALLOWED_TABLE.lower():
-            raise OutOfScopeQueryError(
-                f"Table is not allowed: {table_name}"
-            )
-
-        # Require exact dataset
-        if db_name != ALLOWED_DATASET.lower():
-            raise OutOfScopeQueryError(
-                f"Dataset is not allowed: {db_name}"
-            )
-
-        # Require exact project
-        if catalog_name != ALLOWED_PROJECT.lower():
-            raise OutOfScopeQueryError(
-                f"Project is not allowed: {catalog_name}"
-            )
 
     # -------------------------
     # Dynamic column allowlist
     # -------------------------
-    allowed_columns = get_allowed_columns()
+    allowed_columns = get_allowed_columns(used_views)
 
     # -------------------------
     # Collect SELECT aliases
