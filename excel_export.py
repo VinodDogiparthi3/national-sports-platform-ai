@@ -226,3 +226,61 @@ def write_workbook(
         raise
 
     return path, total
+
+
+def write_workbook_sheets(
+    sheets,
+    *,
+    language: str = "en",
+    max_rows: int = EXPORT_MAX_ROWS,
+) -> tuple[str, int]:
+    """Write each view's rows to a distinct worksheet, enforcing one workbook row cap."""
+    workbook = Workbook(write_only=True)
+    used_titles = set()
+
+    def create_sheet(title, headers):
+        base = re.sub(r"[\\/*?:\[\]]", " ", title).strip() or "Data"
+        base = base[:31]
+        candidate = base
+        suffix = 2
+        while candidate.casefold() in used_titles:
+            ending = f" {suffix}"
+            candidate = f"{base[:31 - len(ending)]}{ending}"
+            suffix += 1
+        used_titles.add(candidate.casefold())
+
+        sheet = workbook.create_sheet(candidate)
+        sheet.sheet_view.rightToLeft = language == "ar"
+        sheet.freeze_panes = "A2"
+        headers = unique_headers(headers)
+        for position, header in enumerate(headers, start=1):
+            sheet.column_dimensions[get_column_letter(position)].width = max(12, min(len(header) + 6, 50))
+        header_cells = []
+        for header in headers:
+            cell = WriteOnlyCell(sheet, value=ILLEGAL_CHARACTERS_RE.sub("", header))
+            cell.font = Font(bold=True)
+            cell.data_type = "s"
+            header_cells.append(cell)
+        sheet.append(header_cells)
+        return sheet
+
+    handle, path = tempfile.mkstemp(suffix=".xlsx")
+    os.close(handle)
+    total = 0
+    try:
+        for title, headers, rows in sheets:
+            sheet = create_sheet(title, headers)
+            for row in rows:
+                if total >= max_rows:
+                    raise ExportTooLargeError(f"Export exceeds {max_rows:,} rows.")
+                sheet.append([_cell(sheet, value) for value in row])
+                total += 1
+        if not workbook.worksheets:
+            create_sheet("Data", [])
+        workbook.save(path)
+    except BaseException:
+        _abort_workbook(workbook)
+        if os.path.exists(path):
+            os.remove(path)
+        raise
+    return path, total

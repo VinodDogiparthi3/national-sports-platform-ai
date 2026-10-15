@@ -17,7 +17,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from bigquery_database import execute_sql, get_export_row_count, stream_query_rows
+from bigquery_database import (
+    execute_sql_batch,
+    get_export_row_counts,
+    stream_query_rows_batch,
+)
 from config import (
     EXPORT_CONTEXT_TTL_SECONDS,
     EXPORT_DOWNLOAD_TTL_SECONDS,
@@ -32,19 +36,24 @@ from excel_export import (
     friendly_header,
     is_excel_export_request,
     write_workbook,
+    write_workbook_sheets,
 )
 from gemini_service import (
     OUT_OF_SCOPE_CLARIFICATION,
     extract_export_analysis_question,
+    explain_previous_results,
     generate_routed_sql,
+    generate_query_plan,
     generate_answer,
     generate_answer_stream,
     get_out_of_scope_clarification,
     translate_texts,
+    translate_result_preserving_numbers,
     translate_questions_to_arabic,
 )
 from sql_guardrails import validate_sql
 from view_catalog import find_source
+from conversation_context import is_explanation_request, previous_result_text, translation_target
 
 
 # --------------------------------------------------
@@ -84,6 +93,31 @@ class QuestionRequest(BaseModel):
     question: str
     language: Literal["en", "ar"] = "en"
     export_context: str | None = Field(default=None, max_length=20000)
+    conversation_history: list["ConversationTurn"] = Field(default_factory=list, max_length=12)
+    conversation_context: "ConversationContext | None" = None
+
+
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(max_length=4000)
+    is_result: bool = False
+
+
+class SelectionOption(BaseModel):
+    view_id: str = Field(max_length=200)
+    year: int | None = None
+
+
+class PendingSelection(BaseModel):
+    kind: Literal["views", "years"]
+    question: str = Field(max_length=4000)
+    options: list[SelectionOption] = Field(max_length=10)
+
+
+class ConversationContext(BaseModel):
+    pending: PendingSelection | None = None
+    last_question: str | None = Field(default=None, max_length=4000)
+    view_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class QuestionTranslationRequest(BaseModel):
@@ -172,7 +206,7 @@ def get_source_info(sql: str) -> dict | None:
         "dataset": first.dataset,
         "view": getattr(first, "view", first.source_id),
         "object_type": first.object_type,
-        "object_name": first.table if first.object_type == "Table" else first.view,
+        "object_name": getattr(first, "table", first.source_id),
         "display_name": first.display_name,
         "domain": first.domain,
         "sql": sql,
@@ -182,6 +216,11 @@ def get_source_info(sql: str) -> dict | None:
 NO_DATA_MESSAGES = {
     "en": "No matching data was found for this question.",
     "ar": "لم يتم العثور على بيانات مطابقة لهذا السؤال.",
+}
+
+NO_PREVIOUS_RESULT_MESSAGES = {
+    "en": "There are no previous results in this conversation to use.",
+    "ar": "لا توجد نتائج سابقة في هذه المحادثة لاستخدامها.",
 }
 
 ERROR_MESSAGES = {
@@ -297,8 +336,41 @@ EXPORT_MESSAGES = {
 }
 
 
-def _export_context_token(sql: str, question: str) -> str:
-    return encrypt_token({"kind": "context", "sql": sql, "question": question})
+def _export_context_token(queries, question: str) -> str:
+    if isinstance(queries, str):
+        queries = [{"view_id": None, "sql": queries}]
+    payload = {"kind": "context", "queries": queries, "question": question}
+    if len(queries) == 1:
+        payload["sql"] = queries[0]["sql"] if isinstance(queries[0], dict) else queries[0][1]
+    return encrypt_token(payload)
+
+
+def _queries_from_export_context(context):
+    queries = context.get("queries") if isinstance(context, dict) else None
+    if queries:
+        return [(item.get("view_id"), item["sql"]) for item in queries if isinstance(item, dict) and isinstance(item.get("sql"), str)]
+    if isinstance(context, dict) and isinstance(context.get("sql"), str):
+        return [(None, context["sql"])]
+    return []
+
+
+def _context_dict(context):
+    return context.model_dump() if hasattr(context, "model_dump") else context
+
+
+def _source_records(queries):
+    return [
+        source
+        for _, sql in queries
+        if (source := get_source_info(sql)) is not None
+    ]
+
+
+def _format_view_answer(view_id: str, answer: str) -> str:
+    from view_catalog import get_view
+
+    view = get_view(view_id)
+    return f"### {view.display_name if view else view_id}\n\n{answer}"
 
 
 def _localized_headers(columns: list[str], language: str) -> list[str]:
@@ -341,49 +413,61 @@ def _excel_export_events(request: QuestionRequest, response_language: str):
             print("\nERROR SPLITTING EXPORT REQUEST:", type(e).__name__, str(e))
             analysis_question = None
 
-        new_context_sql = None
+        new_context_queries = None
         if analysis_question:
             if is_metadata_question(analysis_question):
                 yield _sse_event("token", {"text": get_out_of_scope_clarification(response_language)})
                 yield done
                 return
 
-            generated_sql = generate_routed_sql(analysis_question, response_language)
-            if generated_sql.upper().startswith("CLARIFICATION:"):
-                clarification = generated_sql[len("CLARIFICATION:"):].strip()
+            plan = generate_query_plan(
+                analysis_question,
+                response_language,
+                request.conversation_history,
+                request.conversation_context,
+            )
+            if plan.clarification:
                 yield _sse_event(
                     "token",
-                    {"text": clarification or get_out_of_scope_clarification(response_language)},
+                    {"text": plan.clarification},
                 )
                 yield done
                 return
-            source_sql = new_context_sql = generated_sql
+            source_queries = new_context_queries = list(plan.queries)
         elif context:
-            source_sql = context["sql"]
+            source_queries = _queries_from_export_context(context)
         else:
             yield _sse_event("token", {"text": messages["no_context"]})
             yield done
             return
 
         try:
-            export_sql = validate_sql(source_sql, row_limit=None)
+            export_queries = [
+                (view_id, validate_sql(sql, row_limit=None))
+                for view_id, sql in source_queries
+            ]
         except ValueError:
             yield _sse_event("token", {"text": get_out_of_scope_clarification(response_language)})
+            yield done
+            return
+        if not export_queries:
+            yield _sse_event("token", {"text": messages["no_context"]})
             yield done
             return
 
         yield _sse_event("status", {"step": "analyzing"})
         try:
-            row_count = get_export_row_count(export_sql)
+            row_counts = get_export_row_counts([sql for _, sql in export_queries])
         except ValueError:
             yield _sse_event("token", {"text": messages["too_large_query"]})
             yield done
             return
 
-        if row_count == 0:
+        if not any(row_counts):
             yield _sse_event("token", {"text": messages["no_data"]})
             yield done
             return
+        row_count = sum(row_counts)
         if row_count > EXPORT_MAX_ROWS:
             yield _sse_event(
                 "token",
@@ -392,18 +476,26 @@ def _excel_export_events(request: QuestionRequest, response_language: str):
             yield done
             return
 
-        download_token = encrypt_token(
-            {"kind": "download", "sql": export_sql, "language": response_language}
-        )
+        download_token = encrypt_token({
+            "kind": "download",
+            "queries": [{"view_id": view_id, "sql": sql} for view_id, sql in export_queries],
+            "language": response_language,
+        })
         yield _sse_event("token", {"text": messages["ready"]})
         yield _sse_event(
             "export",
             {"download_url": f"/exports/{download_token}", "row_count": row_count},
         )
-        if new_context_sql:
+        if new_context_queries:
             yield _sse_event(
                 "context",
-                {"export_context": _export_context_token(new_context_sql, analysis_question)},
+                {
+                    "export_context": _export_context_token(
+                        [{"view_id": view_id, "sql": sql} for view_id, sql in new_context_queries],
+                        analysis_question,
+                    ),
+                    "conversation_context": plan.conversation_context,
+                },
             )
         yield done
 
@@ -502,14 +594,20 @@ def download_excel_export(token: str):
     language = "ar" if payload.get("language") == "ar" else "en"
     path = None
     try:
-        sql = validate_sql(payload["sql"], row_limit=None)
-        columns, rows = stream_query_rows(sql)
-        path, _ = write_workbook(
-            _localized_headers(columns, language),
-            rows,
-            language=language,
-            max_rows=EXPORT_MAX_ROWS,
-        )
+        source_queries = payload.get("queries") or [{"sql": payload["sql"], "view_id": None}]
+        export_queries = [
+            (query.get("view_id"), validate_sql(query["sql"], row_limit=None))
+            for query in source_queries
+        ]
+        query_rows = stream_query_rows_batch([sql for _, sql in export_queries])
+        sheets = []
+        for (view_id, _), (columns, rows) in zip(export_queries, query_rows):
+            from view_catalog import get_view
+
+            view = get_view(view_id or "")
+            title = view.display_name if view else "Data"
+            sheets.append((title, _localized_headers(columns, language), rows))
+        path, _ = write_workbook_sheets(sheets, language=language, max_rows=EXPORT_MAX_ROWS)
     except ExportTooLargeError:
         raise HTTPException(status_code=413, detail=EXPORT_MESSAGES[language]["too_large_query"])
     except ValueError:
@@ -543,6 +641,24 @@ def ask(request: QuestionRequest):
                 "answer": greeting_response,
             }
 
+        previous_result = previous_result_text(request.conversation_history)
+        target_language = translation_target(request.question, response_language)
+        if target_language:
+            answer = (
+                translate_result_preserving_numbers(previous_result, target_language)
+                if previous_result
+                else NO_PREVIOUS_RESULT_MESSAGES[response_language]
+            )
+            return {"question": request.question, "answer": answer}
+
+        if is_explanation_request(request.question):
+            answer = (
+                explain_previous_results(request.question, previous_result, response_language)
+                if previous_result
+                else NO_PREVIOUS_RESULT_MESSAGES[response_language]
+            )
+            return {"question": request.question, "answer": answer}
+
         if is_metadata_question(request.question):
             return {
                 "question": request.question,
@@ -550,52 +666,46 @@ def ask(request: QuestionRequest):
             }
 
         # 1. Natural language -> BigQuery SQL
-        generated_sql = generate_routed_sql(request.question, response_language)
+        plan = generate_query_plan(
+            request.question,
+            response_language,
+            request.conversation_history,
+            request.conversation_context,
+        )
 
-        if generated_sql.upper().startswith("CLARIFICATION:"):
-            clarification = generated_sql[len("CLARIFICATION:"):].strip()
+        if plan.clarification:
             return {
                 "question": request.question,
-                "answer": clarification or (
-                    "يرجى إعادة صياغة السؤال." if response_language == "ar"
-                    else "Could you rephrase your question?"
-                ),
+                "answer": plan.clarification,
+                **({"conversation_context": plan.conversation_context} if plan.conversation_context else {}),
             }
 
-        # 2. SQL safety validation
+        # Validate every view query before any of them can execute.
         try:
-            safe_sql = validate_sql(generated_sql)
+            safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
         except ValueError:
             return {
                 "question": request.question,
                 "answer": clarification,
             }
 
-        # 3. Execute against BigQuery
-        columns, rows = execute_sql(safe_sql)
-        source = get_source_info(safe_sql)
-
-        if not rows:
-            return {
-                "question": request.question,
-                "answer": NO_DATA_MESSAGES[response_language],
-                **({"source": source} if source else {}),
-            }
-
-        # 4. Database results -> grounded natural-language answer
-        answer = generate_answer(
-            request.question,
-            columns,
-            rows,
-            response_language,
-        )
-
-        # 5. Return response to frontend
-        return {
+        results = execute_sql_batch([sql for _, sql in safe_queries])
+        sections = []
+        for (view_id, _), (columns, rows) in zip(safe_queries, results):
+            answer = generate_answer(request.question, columns, rows, response_language) if rows else NO_DATA_MESSAGES[response_language]
+            sections.append(_format_view_answer(view_id, answer) if len(safe_queries) > 1 else answer)
+        sources = _source_records(safe_queries)
+        response = {
             "question": request.question,
-            "answer": answer,
-            **({"source": source} if source else {}),
+            "answer": "\n\n".join(sections),
         }
+        if len(sources) == 1:
+            response["source"] = sources[0]
+        elif sources:
+            response["sources"] = sources
+        if plan.conversation_context:
+            response["conversation_context"] = plan.conversation_context
+        return response
 
     except ValueError as e:
         raise HTTPException(
@@ -637,6 +747,32 @@ def ask_stream(request: QuestionRequest):
                 yield _sse_event("done", {"question": request.question})
                 return
 
+            previous_result = previous_result_text(request.conversation_history)
+            target_language = translation_target(request.question, response_language)
+            if target_language:
+                answer = (
+                    translate_result_preserving_numbers(previous_result, target_language)
+                    if previous_result
+                    else NO_PREVIOUS_RESULT_MESSAGES[response_language]
+                )
+                yield _sse_event("token", {"text": answer})
+                if request.conversation_context:
+                    yield _sse_event("context", {"conversation_context": _context_dict(request.conversation_context)})
+                yield _sse_event("done", {"question": request.question})
+                return
+
+            if is_explanation_request(request.question):
+                answer = (
+                    explain_previous_results(request.question, previous_result, response_language)
+                    if previous_result
+                    else NO_PREVIOUS_RESULT_MESSAGES[response_language]
+                )
+                yield _sse_event("token", {"text": answer})
+                if request.conversation_context:
+                    yield _sse_event("context", {"conversation_context": _context_dict(request.conversation_context)})
+                yield _sse_event("done", {"question": request.question})
+                return
+
             if is_excel_export_request(request.question):
                 yield from _excel_export_events(request, response_language)
                 return
@@ -646,53 +782,60 @@ def ask_stream(request: QuestionRequest):
                 yield _sse_event("done", {"question": request.question})
                 return
 
-            generated_sql = generate_routed_sql(request.question, response_language)
+            plan = generate_query_plan(
+                request.question,
+                response_language,
+                request.conversation_history,
+                request.conversation_context,
+            )
 
-            if generated_sql.upper().startswith("CLARIFICATION:"):
-                clarification = generated_sql[len("CLARIFICATION:"):].strip()
+            if plan.clarification:
+                if plan.conversation_context:
+                    yield _sse_event("context", {"conversation_context": plan.conversation_context})
                 yield _sse_event(
                     "token",
-                    {
-                        "text": clarification or (
-                            "يرجى إعادة صياغة السؤال." if response_language == "ar"
-                            else "Could you rephrase your question?"
-                        )
-                    },
+                    {"text": plan.clarification},
                 )
                 yield _sse_event("done", {"question": request.question})
                 return
 
             try:
-                safe_sql = validate_sql(generated_sql)
+                safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
             except ValueError:
                 yield _sse_event("token", {"text": clarification})
                 yield _sse_event("done", {"question": request.question})
                 return
 
             yield _sse_event("status", {"step": "analyzing"})
-            source = get_source_info(safe_sql)
-            if source:
+            for source in _source_records(safe_queries):
                 yield _sse_event("source", source)
 
-            columns, rows = execute_sql(safe_sql)
-            if not rows:
-                yield _sse_event("token", {"text": NO_DATA_MESSAGES[response_language]})
-                yield _sse_event("done", {"question": request.question})
-                return
+            query_results = execute_sql_batch([sql for _, sql in safe_queries])
             yield _sse_event("status", {"step": "preparing"})
+            for (view_id, _), (columns, rows) in zip(safe_queries, query_results):
+                if len(safe_queries) > 1:
+                    heading = _format_view_answer(view_id, "").rstrip()
+                    yield _sse_event("token", {"text": f"{heading}\n\n"})
+                if not rows:
+                    yield _sse_event("token", {"text": NO_DATA_MESSAGES[response_language]})
+                    continue
+                for text in generate_answer_stream(request.question, columns, rows, response_language):
+                    yield _sse_event("token", {"text": text})
+                if len(safe_queries) > 1:
+                    yield _sse_event("token", {"text": "\n\n"})
 
-            for text in generate_answer_stream(
-                request.question,
-                columns,
-                rows,
-                response_language,
-            ):
-                yield _sse_event("token", {"text": text})
-
-            yield _sse_event(
-                "context",
-                {"export_context": _export_context_token(generated_sql, request.question)},
-            )
+            conversation_context = plan.conversation_context or {
+                "pending": None,
+                "last_question": request.question,
+                "view_ids": [view_id for view_id, _ in safe_queries],
+            }
+            yield _sse_event("context", {
+                "export_context": _export_context_token(
+                    [{"view_id": view_id, "sql": sql} for view_id, sql in safe_queries],
+                    request.question,
+                ),
+                "conversation_context": conversation_context,
+            })
             yield _sse_event("done", {"question": request.question})
 
         except ValueError as e:

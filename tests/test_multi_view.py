@@ -9,6 +9,7 @@ from schema_metadata import get_bigquery_schema
 from sql_guardrails import OutOfScopeQueryError, validate_sql
 from view_catalog import (
     APPROVED_VIEWS,
+    AUTHORIZED_TABLES,
     ApprovedTable,
     clear_table_cache,
     find_source,
@@ -41,6 +42,12 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNone(find_view(PROJECT, "dw_nsp_api_views", "budget_view_01"))
         self.assertIsNone(find_view("other", "dw_sharepoint_views", "budget_view_01"))
 
+    def test_explicit_table_authorization_matches_previous_discovery_inventory(self):
+        self.assertEqual(
+            {dataset: len(tables) for dataset, tables in AUTHORIZED_TABLES.items()},
+            {"dw_nsp_api": 42, "dw_ms_crm_onprem": 47, "dw_sharepoint": 72},
+        )
+
     def test_table_catalog_includes_physical_tables_only_in_approved_datasets(self):
         clear_table_cache()
         self.addCleanup(clear_table_cache)
@@ -64,6 +71,15 @@ class CatalogTests(unittest.TestCase):
             self.assertIsNone(find_source("other", "dw_ms_crm_onprem", "ntw_regionBase"))
             self.assertIsNone(find_source(PROJECT, "unapproved", "ntw_regionBase"))
 
+    def test_discovery_does_not_authorize_unlisted_physical_table(self):
+        clear_table_cache()
+        self.addCleanup(clear_table_cache)
+        discovered = SimpleNamespace(table_id="new_unapproved_table", table_type="TABLE")
+        with patch("view_catalog.bigquery.Client") as client_class:
+            client_class.return_value.list_tables.side_effect = [[], [discovered], []]
+
+            self.assertIsNone(find_source(PROJECT, "dw_ms_crm_onprem", "new_unapproved_table"))
+
     def test_no_join_is_verified_by_default(self):
         self.assertTrue(is_join_verified({"budget_view_01"}))
         self.assertFalse(is_join_verified({"budget_view_01", "sopc_view_01"}))
@@ -76,7 +92,8 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("no source_file or sheet_name fields", view_one.description)
         self.assertIn("actual and forecast fields are NUMERIC", view_two.description)
         self.assertIn("source_file and sheet_name are available", view_two.description)
-        prompt = build_routing_prompt("Show the forecast from sports medicine", "en", {})
+        with patch("view_router.get_authorized_tables", return_value=()):
+            prompt = build_routing_prompt("Show the forecast from sports medicine", "en", {})
         self.assertIn(view_one.description, prompt)
         self.assertIn(view_two.description, prompt)
 
@@ -115,28 +132,38 @@ class RouterParsingTests(unittest.TestCase):
     def test_single_view(self):
         self.assertEqual(parse_route({"view_id": "sopc_view_01"}, NO_MATCH).view_id, "sopc_view_01")
 
-    def test_physical_table_is_an_approved_route_source(self):
+    def test_routing_prompt_receives_recent_conversation_history(self):
+        history = [{"role": "user", "text": "Show registrations by sport"}]
+        with patch("view_router.get_authorized_tables", return_value=()):
+            prompt = build_routing_prompt("And for women?", "en", {}, history)
+
+        self.assertIn("Show registrations by sport", prompt)
+        self.assertIn("route it independently instead of forcing it into prior context", prompt)
+
+    def test_authorized_physical_table_is_an_approved_route_source(self):
         table = ApprovedTable(
-            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "CRM source data."
         )
         with patch("view_router.get_source", return_value=table):
             route = parse_route({"source_id": table.source_id}, NO_MATCH)
 
-        self.assertEqual(route.source_id, "dw_ms_crm_onprem.ntw_regionBase")
-        self.assertEqual(route.view_id, route.source_id)
+        self.assertEqual(route.source_id, table.source_id)
 
-    def test_routing_prompt_includes_table_type_and_columns(self):
-        table = ApprovedTable(
-            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+    def test_routing_prompt_includes_only_authorized_tables(self):
+        authorized = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "CRM source data."
         )
-        with patch("view_router.get_approved_tables", return_value=(table,)):
+        with patch("view_router.get_authorized_tables", return_value=(authorized,)):
             prompt = build_routing_prompt(
-                "List regions", "en", {table.source_id: [("Region_Name", "STRING", "NULLABLE")]}
+                "List regions", "en", {authorized.source_id: [("ntw_RegionEn", "STRING", "NULLABLE")]}
             )
 
         self.assertIn('"source_id": "dw_ms_crm_onprem.ntw_regionBase"', prompt)
         self.assertIn('"object_type": "Table"', prompt)
-        self.assertIn("Region_Name", prompt)
+        self.assertIn("ntw_RegionEn", prompt)
+        with patch("view_router.get_authorized_tables", return_value=()):
+            prompt_without_table = build_routing_prompt("List regions", "en", {})
+        self.assertNotIn("ntw_regionBase", prompt_without_table)
 
     def test_unknown_view_is_rejected(self):
         route = parse_route({"view_id": "made_up", "clarification": "Which?"}, NO_MATCH)
@@ -174,6 +201,7 @@ class RouterParsingTests(unittest.TestCase):
         reply = SimpleNamespace(text='```json\n{"view_id": "nafes_licenses_view_01"}\n```')
         with (
             patch("view_router.get_all_source_columns", return_value={}),
+            patch("view_router.get_authorized_tables", return_value=()),
             patch("gemini_service.client.models.generate_content", return_value=reply) as gen,
         ):
             route = route_question("How many active licenses are available?")
@@ -183,6 +211,7 @@ class RouterParsingTests(unittest.TestCase):
     def test_route_question_non_json_response_asks_for_clarification(self):
         with (
             patch("view_router.get_all_source_columns", return_value={}),
+            patch("view_router.get_authorized_tables", return_value=()),
             patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text="not json")),
         ):
             route = route_question("hello?")
@@ -220,18 +249,30 @@ class GuardrailTests(unittest.TestCase):
                 sql = self.validate(f"SELECT COUNT(*) AS n FROM `{view.full_id}`", set())
                 self.assertIn(view.view, sql)
 
-    def test_approved_physical_table_and_columns_are_accepted(self):
+    def test_authorized_physical_table_is_accepted(self):
         table = ApprovedTable(
-            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "CRM source data."
         )
-        sql = f"SELECT `Region_Name` FROM `{table.full_id}`"
-        with patch("sql_guardrails.find_source", return_value=table), patch(
-            "sql_guardrails.get_allowed_columns", return_value={"region_name"}
+        clear_table_cache()
+        self.addCleanup(clear_table_cache)
+        item = SimpleNamespace(table_id=table.table, table_type="TABLE")
+        sql = f"SELECT `ntw_name` FROM `{table.full_id}`"
+        with patch("view_catalog.bigquery.Client") as client_class, patch(
+            "sql_guardrails.get_allowed_columns", return_value={"ntw_name"}
         ):
+            client_class.return_value.list_tables.side_effect = [[], [item], []]
             validated = validate_sql(sql)
-
-        self.assertIn("ntw_regionBase", validated)
         self.assertIn("LIMIT 100", validated)
+
+    def test_discovered_physical_table_is_rejected_by_guardrail(self):
+        clear_table_cache()
+        self.addCleanup(clear_table_cache)
+        discovered = SimpleNamespace(table_id="new_unapproved_table", table_type="TABLE")
+        sql = f"SELECT `value` FROM `{PROJECT}.dw_ms_crm_onprem.new_unapproved_table`"
+        with patch("view_catalog.bigquery.Client") as client_class:
+            client_class.return_value.list_tables.side_effect = [[], [discovered], []]
+            with self.assertRaises(OutOfScopeQueryError):
+                validate_sql(sql)
 
     def test_unapproved_view_and_dataset_mismatch_rejected(self):
         for sql in (
@@ -273,15 +314,14 @@ class SourceInfoTests(unittest.TestCase):
     def test_source_info_none_for_unknown_tables(self):
         self.assertIsNone(app.get_source_info("SELECT 1 FROM `a.b.c`"))
 
-    def test_source_info_labels_physical_table(self):
+    def test_source_info_reports_authorized_physical_table(self):
         table = ApprovedTable(
-            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "CRM source data."
         )
         with patch("app.find_source", return_value=table):
-            info = app.get_source_info(f"SELECT Region_Name FROM `{table.full_id}`")
-
+            info = app.get_source_info(f"SELECT `ntw_name` FROM `{table.full_id}`")
         self.assertEqual(info["object_type"], "Table")
-        self.assertEqual(info["object_name"], "ntw_regionBase")
+        self.assertEqual(info["object_name"], table.table)
 
 
 class ErrorMessageTests(unittest.TestCase):

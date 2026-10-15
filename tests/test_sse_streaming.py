@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import app
 from config import BIGQUERY_DATASET_ID, BIGQUERY_PROJECT_ID, BIGQUERY_TABLE_ID
+from gemini_service import QueryPlan
 
 
 class StreamingAskTests(unittest.TestCase):
@@ -15,11 +16,14 @@ class StreamingAskTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app.app)
 
+    def plan(self, sql):
+        return QueryPlan(queries=(("nsp_base_view_01", sql),))
+
     def test_stream_endpoint_emits_status_sql_tokens_and_done(self):
         with (
-            patch("app.generate_routed_sql", return_value=self.sql),
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)),
             patch("app.validate_sql", side_effect=lambda query: query),
-            patch("app.execute_sql", return_value=(["sport", "total"], [("Football", 3)])),
+            patch("app.execute_sql_batch", return_value=[(["sport", "total"], [("Football", 3)])]),
             patch("app.generate_answer_stream", return_value=iter(["## Counts\n", "\nFootball: **3**"])),
         ):
             response = self.client.post("/ask/stream", json={"question": self.question})
@@ -32,11 +36,102 @@ class StreamingAskTests(unittest.TestCase):
         self.assertIn('event: token\ndata: {"text": "\\nFootball: **3**"}', response.text)
         self.assertIn('event: done\ndata: {"question":', response.text)
 
+    def test_both_selection_queries_each_pending_view_and_completes_sse(self):
+        context = {
+            "pending": {
+                "kind": "views",
+                "question": "How many athletes are registered?",
+                "options": [
+                    {"view_id": "nsp_base_view_01"},
+                    {"view_id": "sopc_view_01"},
+                ],
+            },
+            "last_question": "How many athletes are registered?",
+            "view_ids": ["nsp_base_view_01", "sopc_view_01"],
+        }
+        with (
+            patch("view_router.route_question") as route,
+            patch("gemini_service.generate_sql", side_effect=["SELECT 1", "SELECT 2"]) as generate_sql,
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql_batch", return_value=[(["count"], [(12,)]), (["count"], [(7,)])]) as execute,
+            patch("app.generate_answer_stream", side_effect=[iter(["Athletes: 12"]), iter(["Athletes: 7"])]) as answers,
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "both", "language": "en", "conversation_context": context},
+            )
+
+        route.assert_not_called()
+        self.assertEqual(generate_sql.call_count, 2)
+        self.assertEqual(execute.call_args.args[0], ["SELECT 1", "SELECT 2"])
+        self.assertEqual(answers.call_count, 2)
+        self.assertIn("### NSP Base View", response.text)
+        self.assertIn("### Sports Competitions and Athlete Performance View", response.text)
+        self.assertIn('event: done\ndata: {"question": "both"}', response.text)
+        self.assertIn('"conversation_context": {"pending": null', response.text)
+
+    def test_year_selection_uses_pending_original_question_and_selected_view(self):
+        context = {
+            "pending": {
+                "kind": "years",
+                "question": "Show population by age group",
+                "options": [
+                    {"view_id": "vw_health_determinants_statistics_publication", "year": 2023},
+                    {"view_id": "population_estimates_statistics_view_01", "year": 2024},
+                ],
+            }
+        }
+        with (
+            patch("view_router.route_question") as route,
+            patch("gemini_service.generate_sql", return_value="SELECT 1") as generate_sql,
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql_batch", return_value=[(["age_group"], [("Adult",)])]),
+            patch("app.generate_answer_stream", return_value=iter(["Adult population"])),
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={"question": "2024", "language": "en", "conversation_context": context},
+            )
+
+        route.assert_not_called()
+        generate_sql.assert_called_once_with(
+            "Show population by age group for 2024",
+            "en",
+            "population_estimates_statistics_view_01",
+            [],
+        )
+        self.assertIn("Adult population", response.text)
+        self.assertIn('event: done\ndata: {"question": "2024"}', response.text)
+
+    def test_translation_follow_up_uses_previous_result_without_querying(self):
+        history = [
+            {"role": "assistant", "text": "Total athletes: 13,650", "is_result": True}
+        ]
+        with (
+            patch("app.translate_result_preserving_numbers", return_value="إجمالي الرياضيين: 13,650") as translate,
+            patch("app.generate_query_plan") as plan,
+            patch("app.execute_sql_batch") as execute,
+        ):
+            response = self.client.post(
+                "/ask/stream",
+                json={
+                    "question": "translate the above results to English",
+                    "language": "ar",
+                    "conversation_history": history,
+                },
+            )
+
+        translate.assert_called_once_with("Total athletes: 13,650", "en")
+        plan.assert_not_called()
+        execute.assert_not_called()
+        self.assertIn("إجمالي الرياضيين: 13,650", response.text)
+        self.assertIn('event: done\ndata: {"question": "translate the above results to English"}', response.text)
+
     def test_arabic_ui_and_question_stream_arabic_response(self):
         with (
-            patch("app.generate_routed_sql", return_value=self.sql) as generate_sql,
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)) as generate_plan,
             patch("app.validate_sql", side_effect=lambda query: query),
-            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch("app.execute_sql_batch", return_value=[(["sport"], [("Football",)])]),
             patch(
                 "app.generate_answer_stream",
                 return_value=iter(["الرياضة الأكثر تسجيلًا هي Football."]),
@@ -49,7 +144,7 @@ class StreamingAskTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("الرياضة الأكثر تسجيلًا هي Football.", response.text)
-        generate_sql.assert_called_once_with("ما الرياضة الأكثر تسجيلًا؟", "ar")
+        generate_plan.assert_called_once()
         answer_stream.assert_called_once_with(
             "ما الرياضة الأكثر تسجيلًا؟",
             ["sport"],
@@ -59,9 +154,9 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_english_ui_and_question_stream_english_response(self):
         with (
-            patch("app.generate_routed_sql", return_value=self.sql),
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)),
             patch("app.validate_sql", side_effect=lambda query: query),
-            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch("app.execute_sql_batch", return_value=[(["sport"], [("Football",)])]),
             patch(
                 "app.generate_answer_stream",
                 return_value=iter(["Football has the most registrations."]),
@@ -86,9 +181,9 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_arabic_question_keeps_arabic_narrative_with_english_database_value(self):
         with (
-            patch("app.generate_routed_sql", return_value=self.sql),
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)),
             patch("app.validate_sql", side_effect=lambda query: query),
-            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch("app.execute_sql_batch", return_value=[(["sport"], [("Football",)])]),
             patch(
                 "app.generate_answer_stream",
                 return_value=iter(["الرياضة الأكثر تسجيلًا هي Football."]),
@@ -110,9 +205,9 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_returns_answer_without_generated_sql(self):
         with (
-            patch("app.generate_routed_sql", return_value=self.sql),
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)),
             patch("app.validate_sql", side_effect=lambda query: query),
-            patch("app.execute_sql", return_value=(["sport", "total"], [("Football", 3)])),
+            patch("app.execute_sql_batch", return_value=[(["sport", "total"], [("Football", 3)])]),
             patch("app.generate_answer", return_value="Legacy answer"),
         ):
             response = self.client.post("/ask", json={"question": self.question})
@@ -172,7 +267,8 @@ class StreamingAskTests(unittest.TestCase):
         translate.assert_called_once_with(texts, "ar")
 
     def test_json_ask_clarifies_when_generated_query_has_no_table(self):
-        with patch("app.generate_routed_sql", return_value="SELECT CURRENT_DATE()"):
+        plan = QueryPlan(clarification=app.OUT_OF_SCOPE_CLARIFICATION)
+        with patch("app.generate_query_plan", return_value=plan):
             response = self.client.post("/ask", json={"question": "Tell me today's date"})
 
         self.assertEqual(response.status_code, 200)
@@ -180,7 +276,8 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
 
     def test_stream_ask_clarifies_when_generated_query_has_no_table(self):
-        with patch("app.generate_routed_sql", return_value="SELECT CURRENT_DATE()"):
+        plan = QueryPlan(clarification=app.OUT_OF_SCOPE_CLARIFICATION)
+        with patch("app.generate_query_plan", return_value=plan):
             response = self.client.post(
                 "/ask/stream",
                 json={"question": "Tell me today's date"},
@@ -201,7 +298,7 @@ class StreamingAskTests(unittest.TestCase):
         )
 
         for question in questions:
-            with self.subTest(question=question), patch("app.generate_routed_sql") as generate_sql:
+            with self.subTest(question=question), patch("app.generate_query_plan") as generate_sql:
                 response = self.client.post("/ask", json={"question": question})
 
             self.assertEqual(response.status_code, 200)
@@ -210,7 +307,7 @@ class StreamingAskTests(unittest.TestCase):
             generate_sql.assert_not_called()
 
     def test_stream_metadata_question_is_clarified_without_sql_generation(self):
-        with patch("app.generate_routed_sql") as generate_sql:
+        with patch("app.generate_query_plan") as generate_sql:
             response = self.client.post(
                 "/ask/stream",
                 json={"question": "What columns are available?"},
@@ -224,7 +321,8 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_clarifies_when_generated_query_uses_disallowed_table(self):
         query = "SELECT * FROM `other-project.other-dataset.other-table`"
-        with patch("app.generate_routed_sql", return_value=query):
+        plan = QueryPlan(queries=(("nsp_base_view_01", query),))
+        with patch("app.generate_query_plan", return_value=plan):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
 
         self.assertEqual(response.status_code, 200)
@@ -236,7 +334,7 @@ class StreamingAskTests(unittest.TestCase):
             f"{BIGQUERY_TABLE_ID}`"
         )
         with (
-            patch("app.generate_routed_sql", return_value=query),
+            patch("app.generate_query_plan", return_value=QueryPlan(queries=(("nsp_base_view_01", query),))),
             patch("sql_guardrails.get_allowed_columns", return_value={"sport"}),
         ):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
@@ -246,7 +344,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_json_ask_hides_schema_validation_details(self):
         with (
-            patch("app.generate_routed_sql", return_value="SELECT * FROM generated_query"),
+            patch("app.generate_query_plan", return_value=QueryPlan(queries=(("nsp_base_view_01", "SELECT * FROM generated_query"),))),
             patch(
                 "app.validate_sql",
                 side_effect=ValueError("Table is not allowed: information_schema.columns"),
@@ -260,7 +358,7 @@ class StreamingAskTests(unittest.TestCase):
 
     def test_stream_ask_hides_schema_validation_details(self):
         with (
-            patch("app.generate_routed_sql", return_value="SELECT * FROM generated_query"),
+            patch("app.generate_query_plan", return_value=QueryPlan(queries=(("nsp_base_view_01", "SELECT * FROM generated_query"),))),
             patch(
                 "app.validate_sql",
                 side_effect=ValueError("Table is not allowed: information_schema.columns"),

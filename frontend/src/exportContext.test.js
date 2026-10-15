@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
 import { streamQuestion } from "./api.js";
-import { getLatestExportContext, resolveDownloadUrl } from "./exportContext.js";
+import {
+  getConversationHistory,
+  getLatestConversationContext,
+  getLatestExportContext,
+  mergeSources,
+  resolveDownloadUrl,
+} from "./exportContext.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -26,21 +32,30 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe("streamQuestion export support", () => {
-  it("sends the conversation's export context with the question", async () => {
+describe("streamQuestion conversation context", () => {
+  it("sends bounded conversation history and context separately from export context", async () => {
     let request;
     globalThis.fetch = async (url, options) => {
       request = { url, body: JSON.parse(options.body) };
       return sseResponse([["done", { question: "q" }]]);
     };
 
-    await streamQuestion("Export these results to Excel.", "en", () => {}, "ctx-token");
+    await streamQuestion(
+      "Export these results to Excel.",
+      "en",
+      () => {},
+      "ctx-token",
+      [{ role: "user", text: "Show regions", is_result: false }],
+      { pending: { kind: "views", source_ids: ["nsp_base_view_01"] } },
+    );
 
     assert.ok(request.url.endsWith("/ask/stream"));
     assert.deepEqual(request.body, {
       question: "Export these results to Excel.",
       language: "en",
       export_context: "ctx-token",
+      conversation_history: [{ role: "user", text: "Show regions", is_result: false }],
+      conversation_context: { pending: { kind: "views", source_ids: ["nsp_base_view_01"] } },
     });
   });
 
@@ -53,7 +68,13 @@ describe("streamQuestion export support", () => {
 
     await streamQuestion("hello", "ar", () => {});
 
-    assert.equal(body.export_context, null);
+    assert.deepEqual(body, {
+      question: "hello",
+      language: "ar",
+      export_context: null,
+      conversation_history: [],
+      conversation_context: null,
+    });
     assert.equal(body.language, "ar");
   });
 
@@ -113,5 +134,51 @@ describe("export context selection", () => {
   it("builds an absolute download link from the API base URL", () => {
     assert.equal(resolveDownloadUrl("http://127.0.0.1:8000", "/exports/abc"), "http://127.0.0.1:8000/exports/abc");
     assert.equal(resolveDownloadUrl("", "/exports/abc"), "/exports/abc");
+  });
+});
+
+describe("conversation context selection", () => {
+  it("uses the latest structured assistant context", () => {
+    const messages = [
+      { role: "assistant", text: "Choose a view", conversationContext: { pending: { source_ids: ["a"] } } },
+      { role: "user", text: "both" },
+      { role: "assistant", text: "Results", conversationContext: { pending: null, result: "r" } },
+    ];
+    assert.deepEqual(getLatestConversationContext(messages), { pending: null, result: "r" });
+  });
+
+  it("returns only the last bounded user and assistant messages", () => {
+    const messages = Array.from({ length: 15 }, (_, index) => ({
+      role: index % 2 ? "assistant" : "user",
+      text: `message-${index}`,
+    }));
+    const history = getConversationHistory(messages, 4);
+
+    assert.deepEqual(history.map(({ text }) => text), ["message-11", "message-12", "message-13", "message-14"]);
+    assert.ok(history.every(({ is_result }) => !is_result));
+  });
+
+  it("uses displayed translations and marks actual result turns", () => {
+    assert.deepEqual(
+      getConversationHistory([
+        {
+          role: "assistant",
+          text: "Total: 13",
+          displayTranslations: { ar: "الإجمالي: 13" },
+          conversationContext: { pending: null, last_question: "How many?", view_ids: ["nsp_base_view_01"] },
+        },
+      ], 12, "ar"),
+      [{ role: "assistant", text: "الإجمالي: 13", is_result: true }],
+    );
+  });
+});
+
+describe("multi-view source events", () => {
+  it("keeps each view source and ignores duplicate SSE events", () => {
+    const first = { dataset: "dw_nsp_api_views", object_name: "nsp_base_view_01" };
+    const second = { dataset: "dw_sharepoint_views", object_name: "sopc_view_01" };
+    const sources = mergeSources(mergeSources(mergeSources([], first), second), first);
+
+    assert.deepEqual(sources, [first, second]);
   });
 });

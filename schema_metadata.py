@@ -10,7 +10,7 @@ from config import (
     BIGQUERY_TABLE_ID,
     SCHEMA_CACHE_TTL_SECONDS,
 )
-from view_catalog import APPROVED_VIEWS, get_approved_tables, get_source, get_view
+from view_catalog import APPROVED_VIEWS, get_authorized_tables, get_source, get_view
 
 FULL_TABLE_ID = (
     f"{BIGQUERY_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{BIGQUERY_TABLE_ID}"
@@ -100,8 +100,8 @@ def get_all_view_columns() -> dict[str, list[tuple[str, str, str]]]:
 
 
 def get_all_source_columns() -> dict[str, list[tuple[str, str, str]]]:
-    """Columns for approved views and physical tables; unavailable metadata is omitted."""
-    sources = [*APPROVED_VIEWS, *get_approved_tables()]
+    """Columns for approved views and explicitly authorized physical tables."""
+    sources = [*APPROVED_VIEWS, *get_authorized_tables()]
 
     def load(source):
         try:

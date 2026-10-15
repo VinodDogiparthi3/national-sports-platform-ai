@@ -1,11 +1,13 @@
 import json
 import re
+from dataclasses import dataclass
 
 from google import genai
 import sqlglot
 from sqlglot import exp
 
 from config import PROJECT_ID, LOCATION, MODEL, BIGQUERY_TABLE_ID
+from conversation_context import history_payload, resolve_pending_selection
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
 from view_catalog import get_source
 
@@ -105,6 +107,46 @@ def translate_questions_to_arabic(questions: list[str]) -> list[str]:
     return translate_texts(questions, "ar")
 
 
+_NUMBER_VALUE = re.compile(
+    r"(?<!\w)[+-]?(?:\d{1,3}(?:[,٬]\d{3})+|\d+)(?:[.٫]\d+)?%?(?!\w)"
+)
+
+
+def translate_result_preserving_numbers(text: str, target_language: str) -> str:
+    """Reuse the translation model while restoring every displayed numeric token exactly."""
+    numbers = []
+
+    def protect(match):
+        marker = f"XQZNUMBER{len(numbers)}QZX"
+        numbers.append((marker, match.group()))
+        return marker
+
+    protected = _NUMBER_VALUE.sub(protect, text)
+    translated = translate_texts([protected], target_language)[0]
+    if any(translated.count(marker) != 1 for marker, _ in numbers):
+        return text
+    for marker, value in numbers:
+        translated = translated.replace(marker, value)
+    return translated
+
+
+def explain_previous_results(question: str, previous_response: str, language: str) -> str:
+    response_language = "Arabic" if language == "ar" else "English"
+    prompt = f"""
+Explain the user's previously displayed National Sports Platform results in clear {response_language}.
+Use only the supplied response; do not query data, invent facts, or change any numeric value.
+Answer the user's follow-up directly and concisely.
+
+Previous displayed response:
+{previous_response}
+
+Follow-up:
+{question}
+"""
+    response = client.models.generate_content(model=MODEL, contents=prompt)
+    return response.text.strip()
+
+
 def _clean_sql_output(text: str) -> str:
     text = text.strip()
     fenced_sql = re.fullmatch(
@@ -115,26 +157,102 @@ def _clean_sql_output(text: str) -> str:
     return fenced_sql.group(1).strip() if fenced_sql else text
 
 
-def generate_routed_sql(question: str, language: str = "en") -> str:
-    """Pick the best approved view for the question, then generate SQL for it (or a CLARIFICATION)."""
+@dataclass(frozen=True)
+class QueryPlan:
+    queries: tuple[tuple[str, str], ...] = ()
+    clarification: str | None = None
+    conversation_context: dict | None = None
+
+
+def _year_options(view_ids: tuple[str, ...]) -> list[dict]:
+    from view_catalog import APPROVED_VIEWS
+
+    by_id = {view.view: view for view in APPROVED_VIEWS}
+    options = []
+    years_by_view = {}
+    for view_id in view_ids:
+        view = by_id.get(view_id)
+        if view is None:
+            return []
+        years = set(view.available_years)
+        if not years:
+            years.update(int(year) for year in re.findall(r"\b(?:19|20)\d{2}\b", f"{view.view} {view.display_name} {view.description}"))
+        years_by_view[view_id] = sorted(years)
+    distinct_years = {year for years in years_by_view.values() for year in years}
+    if len(distinct_years) < 2 or any(not years for years in years_by_view.values()):
+        return []
+    for view_id, years in years_by_view.items():
+        options.extend({"view_id": view_id, "year": year} for year in years)
+    return options
+
+
+def generate_query_plan(
+    question: str,
+    language: str = "en",
+    history=(),
+    conversation_context=None,
+) -> QueryPlan:
+    """Resolve a clarification or route a new question, then prepare per-view SQL."""
     from view_router import route_question
 
-    route = route_question(question, language)
-    source_id = getattr(route, "source_id", getattr(route, "view_id", None))
-    if source_id is None:
-        return f"CLARIFICATION: {route.clarification or get_out_of_scope_clarification(language)}"
-    source = get_source(source_id)
-    year = re.search(r"\b(?:19|20)\d{2}\b", question)
-    available_years = getattr(source, "available_years", ())
-    if source and year and available_years and int(year.group()) not in available_years:
-        available_years = ", ".join(str(value) for value in available_years)
-        if language == "ar":
-            return f"CLARIFICATION: بيانات هذا العرض متاحة للأعوام {available_years} فقط."
-        return f"CLARIFICATION: This source currently has data for {available_years} only."
-    return generate_sql(question, language, source_id)
+    resolved = resolve_pending_selection(question, conversation_context)
+    if resolved:
+        resolved_question = resolved["question"]
+        view_ids = tuple(resolved["view_ids"])
+    else:
+        resolved_question = question
+        route = route_question(question, language, history)
+        source_id = getattr(route, "source_id", getattr(route, "view_id", None))
+        candidates = tuple(getattr(route, "candidate_view_ids", ()))
+        if source_id is None and len(candidates) > 1:
+            years = _year_options(candidates)
+            kind = "years" if years else "views"
+            options = years or [{"view_id": view_id} for view_id in candidates]
+            context = {
+                "pending": {"kind": kind, "question": question, "options": options},
+                "last_question": question,
+                "view_ids": list(candidates),
+            }
+            return QueryPlan(clarification=route.clarification, conversation_context=context)
+        if source_id is None:
+            return QueryPlan(clarification=route.clarification or get_out_of_scope_clarification(language))
+        view_ids = (source_id,)
+
+    requested_year = re.search(r"\b(?:19|20)\d{2}\b", resolved_question)
+    if requested_year and len(view_ids) == 1:
+        source = get_source(view_ids[0])
+        available_years = getattr(source, "available_years", ())
+        if available_years and int(requested_year.group()) not in available_years:
+            year_text = ", ".join(str(value) for value in available_years)
+            clarification = (
+                f"بيانات هذا العرض متاحة للأعوام {year_text} فقط."
+                if language == "ar"
+                else f"This source currently has data for {year_text} only."
+            )
+            return QueryPlan(clarification=clarification)
+
+    queries = []
+    for view_id in view_ids:
+        sql = generate_sql(resolved_question, language, view_id, history)
+        if sql.upper().startswith("CLARIFICATION:"):
+            return QueryPlan(clarification=sql[len("CLARIFICATION:"):].strip())
+        queries.append((view_id, sql))
+
+    context = {"pending": None, "last_question": resolved_question, "view_ids": list(view_ids)}
+    return QueryPlan(queries=tuple(queries), conversation_context=context)
 
 
-def generate_sql(question: str, language: str = "en", view_id: str | None = None) -> str:
+def generate_routed_sql(question: str, language: str = "en", history=()) -> str:
+    """Compatibility helper for callers expecting one SQL statement or a clarification."""
+    plan = generate_query_plan(question, language, history)
+    if plan.clarification:
+        return f"CLARIFICATION: {plan.clarification}"
+    if len(plan.queries) != 1:
+        return f"CLARIFICATION: {get_out_of_scope_clarification(language)}"
+    return plan.queries[0][1]
+
+
+def generate_sql(question: str, language: str = "en", view_id: str | None = None, history=()) -> str:
     schema = get_bigquery_schema(view_id) if view_id else get_bigquery_schema()
     response_language = "Arabic" if language == "ar" else "English"
     clarification = get_out_of_scope_clarification(language)
@@ -146,6 +264,9 @@ for the user's question.
 
 Schema:
 {schema}
+
+Recent conversation (JSON; use only to resolve references in the current question):
+{json.dumps(history_payload(history), ensure_ascii=False)}
 
 Rules:
 - First determine whether the question is about National Sports Platform data supported by this schema.
@@ -161,7 +282,7 @@ Rules:
 - When the schema lists known stored values for a column, filter that column only with those exact values; never translate or guess a value.
 - Unless the user asks for a specific top-N result, do not set a result limit below 100; the application enforces the 100-row maximum.
 - Do not invent tables or columns.
-- The schema describes one National Sports Platform view; its business domain and description are given in the schema.
+- The schema describes one approved National Sports Platform view; its business domain and description are given in the schema.
 - If the question is unrelated to this data or cannot be answered using the listed schema, return exactly: CLARIFICATION: {clarification}
 - Do not infer meanings for ambiguous code fields.
 - Interpret obvious spelling or typing errors only when the intended question is clear.

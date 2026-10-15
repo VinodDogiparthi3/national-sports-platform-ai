@@ -19,7 +19,9 @@ from excel_export import (
     encrypt_token,
     is_excel_export_request,
     write_workbook,
+    write_workbook_sheets,
 )
+from gemini_service import QueryPlan
 from sql_guardrails import validate_sql
 
 SQL = "SELECT sport, COUNT(*) AS registration_count FROM `p.d.t` GROUP BY sport"
@@ -142,6 +144,26 @@ class WorkbookTests(unittest.TestCase):
         self.assertEqual(workbook.sheetnames, ["Data", "Data 2", "Data 3"])
         self.assertEqual([row[0] for row in loaded if isinstance(row[0], int)], [0, 1, 2, 3, 4])
 
+    def test_multi_view_workbook_keeps_views_on_separate_worksheets(self):
+        path, count = write_workbook_sheets(
+            [
+                ("NSP Base View", ["Sport", "Count"], [("Football", 12)]),
+                ("Sports Competitions and Athlete Performance View", ["Region", "Count"], [("Riyadh", 13)]),
+            ],
+            max_rows=10,
+        )
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+
+        workbook = load_workbook(path, read_only=True)
+        self.assertEqual(count, 2)
+        self.assertEqual(
+            workbook.sheetnames,
+            ["NSP Base View", "Sports Competitions and Athlete"],
+        )
+        self.assertEqual(list(workbook[workbook.sheetnames[0]].values)[1], ("Football", 12))
+        self.assertEqual(list(workbook[workbook.sheetnames[1]].values)[1], ("Riyadh", 13))
+        workbook.close()
+
     def test_row_limit_is_enforced_and_temp_file_removed(self):
         before = openpyxl_temp_files()
         created = []
@@ -194,7 +216,8 @@ class ExportChatFlowTests(unittest.TestCase):
     def ask(self, question, *, language="en", export_context=None, **patches):
         defaults = {
             "app.extract_export_analysis_question": None,
-            "app.get_export_row_count": 3,
+            "app.get_export_row_counts": [3],
+            "app.generate_query_plan": QueryPlan(queries=(("nsp_base_view_01", SQL),)),
         }
         defaults.update(patches)
         stack = [
@@ -204,7 +227,6 @@ class ExportChatFlowTests(unittest.TestCase):
             for name, value in defaults.items()
         ]
         stack.append(patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql))
-        stack.append(patch("app.generate_routed_sql", return_value=SQL))
         mocks = [context.start() for context in stack]
         for context in stack:
             self.addCleanup(context.stop)
@@ -214,22 +236,25 @@ class ExportChatFlowTests(unittest.TestCase):
             json={"question": question, "language": language, "export_context": export_context},
         )
         self.assertEqual(response.status_code, 200)
-        return parse_events(response.text), {"generate_sql": mocks[-1], "validate_sql": mocks[-2]}
+        return parse_events(response.text), {
+            "validate_sql": next(mock for mock in mocks if mock._mock_name == "validate_sql"),
+            "generate_query_plan": next(mock for mock in mocks if mock._mock_name == "generate_query_plan"),
+        }
 
     def tokens(self, events):
         return "".join(payload["text"] for name, payload in events if name == "token")
 
     def test_data_answer_emits_context_for_follow_up_exports(self):
         with (
-            patch("app.generate_routed_sql", return_value=SQL),
+            patch("app.generate_query_plan", return_value=QueryPlan(queries=(("nsp_base_view_01", SQL),))),
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
-            patch("app.execute_sql", return_value=(["sport"], [("Football",)])),
+            patch("app.execute_sql_batch", return_value=[(["sport"], [("Football",)])]),
             patch("app.generate_answer_stream", return_value=iter(["Counts"])),
         ):
             response = self.client.post("/ask/stream", json={"question": "How many registrations are there for each sport?"})
 
         context = dict(parse_events(response.text))["context"]["export_context"]
-        self.assertEqual(decrypt_token(context, 60, "context")["sql"], SQL)
+        self.assertEqual(decrypt_token(context, 60, "context")["queries"][0]["sql"], SQL)
         self.assertNotIn("SELECT", context)
 
     def test_follow_up_export_reuses_previous_validated_query_without_new_sql(self):
@@ -239,7 +264,7 @@ class ExportChatFlowTests(unittest.TestCase):
         names = [name for name, _ in events]
         self.assertIn("export", names)
         self.assertEqual(self.tokens(events), "Your Excel report is ready.")
-        mocks["generate_sql"].assert_not_called()
+        mocks["generate_query_plan"].assert_not_called()
         mocks["validate_sql"].assert_called_once_with(SQL, row_limit=None)
 
         download = dict(events)["export"]
@@ -247,26 +272,64 @@ class ExportChatFlowTests(unittest.TestCase):
         self.assertTrue(download["download_url"].startswith("/exports/"))
         self.assertNotIn("SELECT", download["download_url"])
 
+    def test_multi_view_export_uses_separate_worksheets(self):
+        context = app._export_context_token(
+            [
+                {"view_id": "nsp_base_view_01", "sql": SQL},
+                {"view_id": "sopc_view_01", "sql": SQL},
+            ],
+            "Show registrations across both views",
+        )
+        events, mocks = self.ask(
+            "Export these results to Excel.",
+            export_context=context,
+            **{"app.get_export_row_counts": [2, 3]},
+        )
+
+        export_event = dict(events)["export"]
+        self.assertEqual(export_event["row_count"], 5)
+        self.assertEqual(mocks["validate_sql"].call_count, 2)
+        token = export_event["download_url"].rsplit("/", 1)[-1]
+        with (
+            patch(
+                "app.stream_query_rows_batch",
+                return_value=[
+                    (["sport", "count"], iter([("Football", 12)])),
+                    (["region", "count"], iter([("Riyadh", 13)])),
+                ],
+            ),
+            patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
+        ):
+            response = self.client.get(f"/exports/{token}")
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.content), read_only=True)
+        self.assertEqual(workbook.sheetnames, ["NSP Base View", "Sports Competitions and Athlete"])
+        self.assertEqual(list(workbook[workbook.sheetnames[0]].values)[1], ("Football", 12))
+        self.assertEqual(list(workbook[workbook.sheetnames[1]].values)[1], ("Riyadh", 13))
+        workbook.close()
+
     def test_direct_export_runs_the_new_query_in_the_same_request(self):
         events, mocks = self.ask(
             "Show athlete registrations grouped by sport and gender, and export the results to Excel.",
-            **{"app.extract_export_analysis_question": "Show athlete registrations grouped by sport and gender"},
+            **{
+                "app.extract_export_analysis_question": "Show athlete registrations grouped by sport and gender",
+                "app.generate_query_plan": QueryPlan(queries=(("nsp_base_view_01", SQL),)),
+            },
         )
 
-        mocks["generate_sql"].assert_called_once_with(
-            "Show athlete registrations grouped by sport and gender", "en"
-        )
+        mocks["generate_query_plan"].assert_called_once()
         self.assertEqual(self.tokens(events), "Your Excel report is ready.")
         self.assertIn("export", dict(events))
         context = dict(events)["context"]["export_context"]
-        self.assertEqual(decrypt_token(context, 60, "context")["sql"], SQL)
+        self.assertEqual(decrypt_token(context, 60, "context")["queries"][0]["sql"], SQL)
 
     def test_export_without_previous_results_asks_which_data(self):
         events, mocks = self.ask("Export this data to Excel.")
 
         self.assertIn("Which NSP data would you like to export", self.tokens(events))
         self.assertNotIn("export", dict(events))
-        mocks["generate_sql"].assert_not_called()
+        mocks["generate_query_plan"].assert_not_called()
 
     def test_export_is_not_treated_as_out_of_scope(self):
         events, _ = self.ask("Generate an Excel report.")
@@ -283,7 +346,7 @@ class ExportChatFlowTests(unittest.TestCase):
         events, _ = self.ask(
             "Export these results to Excel.",
             export_context=app._export_context_token(SQL, "q"),
-            **{"app.get_export_row_count": 0},
+                **{"app.get_export_row_counts": [0]},
         )
         self.assertEqual(self.tokens(events), "No matching data was found, so no Excel file was created.")
         self.assertNotIn("export", dict(events))
@@ -293,7 +356,7 @@ class ExportChatFlowTests(unittest.TestCase):
             events, _ = self.ask(
                 "Export these results to Excel.",
                 export_context=app._export_context_token(SQL, "q"),
-                **{"app.get_export_row_count": 11},
+                **{"app.get_export_row_counts": [11]},
             )
         self.assertIn("11 rows", self.tokens(events))
         self.assertIn("10-row limit", self.tokens(events))
@@ -303,7 +366,7 @@ class ExportChatFlowTests(unittest.TestCase):
         events, _ = self.ask(
             "Export these results to Excel.",
             export_context=app._export_context_token(SQL, "q"),
-            **{"app.get_export_row_count": ValueError("too many bytes")},
+            **{"app.get_export_row_counts": ValueError("too many bytes")},
         )
         self.assertIn("too large to process", self.tokens(events))
 
@@ -314,7 +377,7 @@ class ExportChatFlowTests(unittest.TestCase):
         events, _ = self.ask(
             "Export these results to Excel.",
             export_context=app._export_context_token(SQL, "q"),
-            **{"app.get_export_row_count": boom},
+            **{"app.get_export_row_counts": boom},
         )
         self.assertEqual(self.tokens(events), "I couldn't generate the Excel file. Please try again.")
         self.assertNotIn("bigquery down", self.tokens(events))
@@ -336,7 +399,7 @@ class ExportChatFlowTests(unittest.TestCase):
             **{"app.extract_export_analysis_question": "What columns are available?"},
         )
         self.assertEqual(self.tokens(events), app.OUT_OF_SCOPE_CLARIFICATION)
-        mocks["generate_sql"].assert_not_called()
+        mocks["generate_query_plan"].assert_not_called()
 
 
 class ExportDownloadTests(unittest.TestCase):
@@ -349,7 +412,7 @@ class ExportDownloadTests(unittest.TestCase):
     def download(self, token, **patches):
         with (
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
-            patch("app.stream_query_rows", return_value=(self.columns, iter(self.rows))),
+            patch("app.stream_query_rows_batch", return_value=[(self.columns, iter(self.rows))]),
             patch("app.translate_texts", return_value=["الرياضة", "عدد التسجيلات"]),
         ):
             return self.client.get(f"/exports/{token}")
@@ -382,7 +445,7 @@ class ExportDownloadTests(unittest.TestCase):
         token = encrypt_token({"kind": "download", "sql": SQL, "language": "ar"})
         with (
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
-            patch("app.stream_query_rows", return_value=(self.columns, iter(self.rows))),
+            patch("app.stream_query_rows_batch", return_value=[(self.columns, iter(self.rows))]),
             patch("app.translate_texts", side_effect=RuntimeError("unavailable")),
         ):
             response = self.client.get(f"/exports/{token}")
@@ -393,7 +456,7 @@ class ExportDownloadTests(unittest.TestCase):
         token = encrypt_token({"kind": "download", "sql": SQL, "language": "en"})
         with (
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql) as validate,
-            patch("app.stream_query_rows", return_value=(self.columns, iter(self.rows))),
+            patch("app.stream_query_rows_batch", return_value=[(self.columns, iter(self.rows))]),
         ):
             self.client.get(f"/exports/{token}")
         validate.assert_called_once_with(SQL, row_limit=None)
@@ -417,7 +480,7 @@ class ExportDownloadTests(unittest.TestCase):
         token = encrypt_token({"kind": "download", "sql": SQL, "language": "en"})
         with (
             patch("app.validate_sql", side_effect=lambda sql, row_limit=100: sql),
-            patch("app.stream_query_rows", side_effect=RuntimeError("secret project detail")),
+            patch("app.stream_query_rows_batch", side_effect=RuntimeError("secret project detail")),
         ):
             response = self.client.get(f"/exports/{token}")
 

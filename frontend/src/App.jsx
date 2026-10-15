@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { streamQuestion, translateChatTexts } from "./api";
-import { getLatestExportContext, resolveDownloadUrl } from "./exportContext";
+import {
+  getConversationHistory,
+  getLatestConversationContext,
+  getLatestExportContext,
+  mergeSources,
+  resolveDownloadUrl,
+} from "./exportContext";
 import { parseResultCards, splitResultsMarkdown } from "./resultsDisplay";
 import {
   ArrowUpRight,
@@ -517,7 +523,8 @@ function App() {
       let streamedText = "";
       let exportResult = null;
       let exportContext = null;
-      let source = null;
+      let conversationContext = null;
+      let sources = [];
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
@@ -530,16 +537,23 @@ function App() {
           exportResult = payload;
           updateAssistant({ export: payload });
         }
-        if (event === "context") exportContext = payload.export_context;
+        if (event === "context") {
+          exportContext = payload.export_context || exportContext;
+          conversationContext = payload.conversation_context || conversationContext;
+        }
         if (event === "source") {
-          source = payload;
-          updateAssistant({ source: payload });
+          sources = mergeSources(sources, payload);
+          updateAssistant({ sources });
         }
         if (event === "token") {
           streamedText += payload.text;
           updateAssistant({ text: streamedText });
         }
-      }, getLatestExportContext(messages));
+      },
+      getLatestExportContext(messages),
+      getConversationHistory(messages, 12, language),
+      getLatestConversationContext(messages),
+      );
 
       const translatedQuestion = await arabicQuestionTranslation;
       const finalUserMessages = userMessages.map((message) => (
@@ -558,7 +572,9 @@ function App() {
         status: null,
         ...(exportResult ? { export: exportResult } : {}),
         ...(exportContext ? { exportContext } : {}),
-        ...(source ? { source } : {}),
+        ...(conversationContext ? { conversationContext } : {}),
+        ...(sources.length === 1 ? { source: sources[0] } : {}),
+        ...(sources.length > 1 ? { sources } : {}),
       };
       const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -928,16 +944,18 @@ function App() {
                           <strong>{ui.downloadExcel}</strong>
                         </a>
                       )}
-                      {message.role === "assistant" && message.source && (
-                        <details className="source-details">
-                          <summary>{message.source.display_name}</summary>
-                          <dl>
-                            <dt>Dataset</dt><dd>{message.source.dataset}</dd>
-                            <dt>{message.source.object_type || "View"}</dt>
-                            <dd>{message.source.object_name || message.source.view}</dd>
-                          </dl>
-                          <pre dir="ltr"><code>{message.source.sql}</code></pre>
-                        </details>
+                      {message.role === "assistant" && (message.sources?.length || message.source) && (
+                        (message.sources || [message.source]).map((source) => (
+                          <details className="source-details" key={`${source.dataset}.${source.object_name || source.view}`}>
+                            <summary>{source.display_name}</summary>
+                            <dl>
+                              <dt>Dataset</dt><dd>{source.dataset}</dd>
+                              <dt>{source.object_type || "View"}</dt>
+                              <dd>{source.object_name || source.view}</dd>
+                            </dl>
+                            <pre dir="ltr"><code>{source.sql}</code></pre>
+                          </details>
+                        ))
                       )}
                     </div>
                     </div>;
