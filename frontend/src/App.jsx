@@ -933,7 +933,8 @@ function App() {
                           <summary>{message.source.display_name}</summary>
                           <dl>
                             <dt>Dataset</dt><dd>{message.source.dataset}</dd>
-                            <dt>View</dt><dd>{message.source.view}</dd>
+                            <dt>{message.source.object_type || "View"}</dt>
+                            <dd>{message.source.object_name || message.source.view}</dd>
                           </dl>
                           <pre dir="ltr"><code>{message.source.sql}</code></pre>
                         </details>

@@ -7,7 +7,7 @@ from sqlglot import exp
 
 from config import PROJECT_ID, LOCATION, MODEL, BIGQUERY_TABLE_ID
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
-from view_catalog import get_view
+from view_catalog import get_source
 
 
 client = genai.Client(
@@ -120,16 +120,18 @@ def generate_routed_sql(question: str, language: str = "en") -> str:
     from view_router import route_question
 
     route = route_question(question, language)
-    if route.view_id is None:
+    source_id = getattr(route, "source_id", getattr(route, "view_id", None))
+    if source_id is None:
         return f"CLARIFICATION: {route.clarification or get_out_of_scope_clarification(language)}"
-    view = get_view(route.view_id)
+    source = get_source(source_id)
     year = re.search(r"\b(?:19|20)\d{2}\b", question)
-    if view and year and view.available_years and int(year.group()) not in view.available_years:
-        available_years = ", ".join(str(value) for value in view.available_years)
+    available_years = getattr(source, "available_years", ())
+    if source and year and available_years and int(year.group()) not in available_years:
+        available_years = ", ".join(str(value) for value in available_years)
         if language == "ar":
             return f"CLARIFICATION: بيانات هذا العرض متاحة للأعوام {available_years} فقط."
-        return f"CLARIFICATION: This view currently has data for {available_years} only."
-    return generate_sql(question, language, route.view_id)
+        return f"CLARIFICATION: This source currently has data for {available_years} only."
+    return generate_sql(question, language, source_id)
 
 
 def generate_sql(question: str, language: str = "en", view_id: str | None = None) -> str:

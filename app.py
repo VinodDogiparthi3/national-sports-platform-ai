@@ -44,7 +44,7 @@ from gemini_service import (
     translate_questions_to_arabic,
 )
 from sql_guardrails import validate_sql
-from view_catalog import find_view
+from view_catalog import find_source
 
 
 # --------------------------------------------------
@@ -161,16 +161,18 @@ def get_source_info(sql: str) -> dict | None:
         return None
     views = []
     for table in tables:
-        view = find_view(table.catalog or "", table.db or "", table.name or "")
-        if view and view not in views:
-            views.append(view)
+        source = find_source(table.catalog or "", table.db or "", table.name or "")
+        if source and source not in views:
+            views.append(source)
     if not views:
         return None
     first = views[0]
     return {
         "project": first.project,
         "dataset": first.dataset,
-        "view": first.view,
+        "view": getattr(first, "view", first.source_id),
+        "object_type": first.object_type,
+        "object_name": first.table if first.object_type == "Table" else first.view,
         "display_name": first.display_name,
         "domain": first.domain,
         "sql": sql,

@@ -7,7 +7,16 @@ import schema_metadata
 from config import MAX_BYTES_PROCESSED
 from schema_metadata import get_bigquery_schema
 from sql_guardrails import OutOfScopeQueryError, validate_sql
-from view_catalog import APPROVED_VIEWS, find_view, get_view, is_join_verified
+from view_catalog import (
+    APPROVED_VIEWS,
+    ApprovedTable,
+    clear_table_cache,
+    find_source,
+    find_view,
+    get_approved_tables,
+    get_view,
+    is_join_verified,
+)
 from view_router import build_routing_prompt, parse_route, route_question
 
 PROJECT = "mos-gcp-host-dev-prj"
@@ -31,6 +40,29 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNotNone(find_view(PROJECT, "dw_sharepoint_views", "budget_view_01"))
         self.assertIsNone(find_view(PROJECT, "dw_nsp_api_views", "budget_view_01"))
         self.assertIsNone(find_view("other", "dw_sharepoint_views", "budget_view_01"))
+
+    def test_table_catalog_includes_physical_tables_only_in_approved_datasets(self):
+        clear_table_cache()
+        self.addCleanup(clear_table_cache)
+        table = SimpleNamespace(table_id="ntw_regionBase", table_type="TABLE")
+        view = SimpleNamespace(table_id="nsp_base_view", table_type="VIEW")
+        with patch("view_catalog.bigquery.Client") as client_class:
+            client_class.return_value.list_tables.side_effect = [[], [table, view], []]
+
+            tables = get_approved_tables()
+
+        self.assertEqual([source.source_id for source in tables], ["dw_ms_crm_onprem.ntw_regionBase"])
+
+    def test_find_source_requires_approved_project_and_dataset(self):
+        clear_table_cache()
+        self.addCleanup(clear_table_cache)
+        table = SimpleNamespace(table_id="ntw_regionBase", table_type="TABLE")
+        with patch("view_catalog.bigquery.Client") as client_class:
+            client_class.return_value.list_tables.side_effect = [[], [table], []]
+
+            self.assertIsNotNone(find_source(PROJECT, "dw_ms_crm_onprem", "ntw_regionBase"))
+            self.assertIsNone(find_source("other", "dw_ms_crm_onprem", "ntw_regionBase"))
+            self.assertIsNone(find_source(PROJECT, "unapproved", "ntw_regionBase"))
 
     def test_no_join_is_verified_by_default(self):
         self.assertTrue(is_join_verified({"budget_view_01"}))
@@ -62,10 +94,49 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("filter to `age_group` = 'Total'", schema)
         self.assertIn("exclude `age_group` = 'Total'", schema)
 
+    def test_table_schema_context_uses_approved_table_columns(self):
+        source = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+        )
+        fields = [("Region_Name", "STRING", "NULLABLE")]
+        with (
+            patch("schema_metadata.get_source", return_value=source),
+            patch("schema_metadata.get_view_columns", return_value=fields),
+            patch("schema_metadata.get_filter_values", return_value={}),
+        ):
+            schema = get_bigquery_schema(source.source_id)
+
+        self.assertIn(source.full_id, schema)
+        self.assertIn("Object type: Table", schema)
+        self.assertIn("Region_Name STRING NULLABLE", schema)
+
 
 class RouterParsingTests(unittest.TestCase):
     def test_single_view(self):
         self.assertEqual(parse_route({"view_id": "sopc_view_01"}, NO_MATCH).view_id, "sopc_view_01")
+
+    def test_physical_table_is_an_approved_route_source(self):
+        table = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+        )
+        with patch("view_router.get_source", return_value=table):
+            route = parse_route({"source_id": table.source_id}, NO_MATCH)
+
+        self.assertEqual(route.source_id, "dw_ms_crm_onprem.ntw_regionBase")
+        self.assertEqual(route.view_id, route.source_id)
+
+    def test_routing_prompt_includes_table_type_and_columns(self):
+        table = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+        )
+        with patch("view_router.get_approved_tables", return_value=(table,)):
+            prompt = build_routing_prompt(
+                "List regions", "en", {table.source_id: [("Region_Name", "STRING", "NULLABLE")]}
+            )
+
+        self.assertIn('"source_id": "dw_ms_crm_onprem.ntw_regionBase"', prompt)
+        self.assertIn('"object_type": "Table"', prompt)
+        self.assertIn("Region_Name", prompt)
 
     def test_unknown_view_is_rejected(self):
         route = parse_route({"view_id": "made_up", "clarification": "Which?"}, NO_MATCH)
@@ -102,7 +173,7 @@ class RouterParsingTests(unittest.TestCase):
     def test_route_question_uses_gemini_json(self):
         reply = SimpleNamespace(text='```json\n{"view_id": "nafes_licenses_view_01"}\n```')
         with (
-            patch("view_router.get_all_view_columns", return_value={}),
+            patch("view_router.get_all_source_columns", return_value={}),
             patch("gemini_service.client.models.generate_content", return_value=reply) as gen,
         ):
             route = route_question("How many active licenses are available?")
@@ -111,7 +182,7 @@ class RouterParsingTests(unittest.TestCase):
 
     def test_route_question_non_json_response_asks_for_clarification(self):
         with (
-            patch("view_router.get_all_view_columns", return_value={}),
+            patch("view_router.get_all_source_columns", return_value={}),
             patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text="not json")),
         ):
             route = route_question("hello?")
@@ -148,6 +219,19 @@ class GuardrailTests(unittest.TestCase):
             with self.subTest(view=view.view):
                 sql = self.validate(f"SELECT COUNT(*) AS n FROM `{view.full_id}`", set())
                 self.assertIn(view.view, sql)
+
+    def test_approved_physical_table_and_columns_are_accepted(self):
+        table = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+        )
+        sql = f"SELECT `Region_Name` FROM `{table.full_id}`"
+        with patch("sql_guardrails.find_source", return_value=table), patch(
+            "sql_guardrails.get_allowed_columns", return_value={"region_name"}
+        ):
+            validated = validate_sql(sql)
+
+        self.assertIn("ntw_regionBase", validated)
+        self.assertIn("LIMIT 100", validated)
 
     def test_unapproved_view_and_dataset_mismatch_rejected(self):
         for sql in (
@@ -188,6 +272,16 @@ class SourceInfoTests(unittest.TestCase):
 
     def test_source_info_none_for_unknown_tables(self):
         self.assertIsNone(app.get_source_info("SELECT 1 FROM `a.b.c`"))
+
+    def test_source_info_labels_physical_table(self):
+        table = ApprovedTable(
+            "dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "CRM source tables", "Microsoft Dynamics CRM source data."
+        )
+        with patch("app.find_source", return_value=table):
+            info = app.get_source_info(f"SELECT Region_Name FROM `{table.full_id}`")
+
+        self.assertEqual(info["object_type"], "Table")
+        self.assertEqual(info["object_name"], "ntw_regionBase")
 
 
 class ErrorMessageTests(unittest.TestCase):

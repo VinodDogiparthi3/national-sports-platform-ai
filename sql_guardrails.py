@@ -7,7 +7,7 @@ from config import (
     BIGQUERY_TABLE_ID,
 )
 from schema_metadata import get_view_columns
-from view_catalog import find_view, is_join_verified
+from view_catalog import find_source, is_join_verified
 
 
 ALLOWED_PROJECT = BIGQUERY_PROJECT_ID
@@ -78,7 +78,7 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
 
     for table in tables:
 
-        approved = find_view(
+        approved = find_source(
             table.catalog or "",
             table.db or "",
             table.name or "",
@@ -89,7 +89,7 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
                 f"Table is not allowed: {table.catalog}.{table.db}.{table.name}"
             )
 
-        used_views.add(approved.view)
+        used_views.add(approved.source_id)
 
     # Never assume relationships between views.
     if not is_join_verified(used_views):

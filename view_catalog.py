@@ -1,4 +1,8 @@
 from dataclasses import dataclass
+import threading
+import time
+
+from google.cloud import bigquery
 
 from config import BIGQUERY_PROJECT_ID
 
@@ -19,10 +23,50 @@ class ApprovedView:
     def full_id(self) -> str:
         return f"{self.project}.{self.dataset}.{self.view}"
 
+    @property
+    def source_id(self) -> str:
+        return self.view
+
+    @property
+    def object_type(self) -> str:
+        return "View"
+
+
+@dataclass(frozen=True)
+class ApprovedTable:
+    dataset: str
+    table: str
+    display_name: str
+    domain: str
+    description: str
+    project: str = BIGQUERY_PROJECT_ID
+
+    @property
+    def full_id(self) -> str:
+        return f"{self.project}.{self.dataset}.{self.table}"
+
+    @property
+    def source_id(self) -> str:
+        return f"{self.dataset}.{self.table}"
+
+    @property
+    def object_type(self) -> str:
+        return "Table"
+
 
 _NSP = "dw_nsp_api_views"
 _CRM = "dw_ms_crm_onprem_views"
 _SP = "dw_sharepoint_views"
+
+APPROVED_TABLE_DATASETS = {
+    "dw_nsp_api": ("NSP source tables", "NSP API source data."),
+    "dw_ms_crm_onprem": ("CRM source tables", "Microsoft Dynamics CRM source data."),
+    "dw_sharepoint": ("SharePoint source tables", "SharePoint reporting source data."),
+}
+
+_table_cache: tuple[float, tuple[ApprovedTable, ...]] | None = None
+_table_cache_lock = threading.Lock()
+_TABLE_CACHE_TTL_SECONDS = 300
 
 APPROVED_VIEWS: tuple[ApprovedView, ...] = (
     ApprovedView(_NSP, "nsp_base_view_01", "NSP Base View", "Athlete registration",
@@ -87,11 +131,70 @@ def get_view(view_id: str) -> ApprovedView | None:
     return _BY_VIEW.get((view_id or "").lower())
 
 
+def clear_table_cache() -> None:
+    global _table_cache
+    with _table_cache_lock:
+        _table_cache = None
+
+
+def get_approved_tables() -> tuple[ApprovedTable, ...]:
+    """Discover physical tables only in the three explicitly approved warehouse datasets."""
+    global _table_cache
+    with _table_cache_lock:
+        cached = _table_cache
+        if cached and time.monotonic() - cached[0] < _TABLE_CACHE_TTL_SECONDS:
+            return cached[1]
+
+    client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
+    tables = []
+    for dataset, (domain, description) in APPROVED_TABLE_DATASETS.items():
+        try:
+            for item in client.list_tables(f"{BIGQUERY_PROJECT_ID}.{dataset}"):
+                if item.table_type != "TABLE":
+                    continue
+                tables.append(
+                    ApprovedTable(
+                        dataset=dataset,
+                        table=item.table_id,
+                        display_name=item.table_id,
+                        domain=domain,
+                        description=description,
+                    )
+                )
+        except Exception as error:
+            print(f"\nERROR LOADING TABLE CATALOG FOR {dataset}: {type(error).__name__}: {error}")
+
+    result = tuple(tables)
+    with _table_cache_lock:
+        _table_cache = (time.monotonic(), result)
+    return result
+
+
+def get_source(source_id: str) -> ApprovedView | ApprovedTable | None:
+    view = get_view(source_id)
+    if view:
+        return view
+    normalized = (source_id or "").casefold()
+    return next(
+        (table for table in get_approved_tables() if table.source_id.casefold() == normalized),
+        None,
+    )
+
+
 def find_view(project: str, dataset: str, view: str) -> ApprovedView | None:
     found = get_view(view)
     if found and found.dataset.lower() == (dataset or "").lower() and found.project.lower() == (project or "").lower():
         return found
     return None
+
+
+def find_source(project: str, dataset: str, object_name: str) -> ApprovedView | ApprovedTable | None:
+    view = find_view(project, dataset, object_name)
+    if view:
+        return view
+    if project.lower() != BIGQUERY_PROJECT_ID.lower() or dataset.lower() not in APPROVED_TABLE_DATASETS:
+        return None
+    return get_source(f"{dataset}.{object_name}")
 
 
 def is_join_verified(view_ids: set[str]) -> bool:
