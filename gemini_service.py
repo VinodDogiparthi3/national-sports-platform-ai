@@ -5,8 +5,8 @@ from google import genai
 import sqlglot
 from sqlglot import exp
 
-from config import PROJECT_ID, LOCATION, MODEL
-from schema_metadata import get_bigquery_schema
+from config import PROJECT_ID, LOCATION, MODEL, BIGQUERY_TABLE_ID
+from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
 from view_catalog import get_view
 
 
@@ -156,6 +156,7 @@ Rules:
 - Use only tables and columns provided in the schema. Do not JOIN other tables or views.
 - Column names may be Arabic or English; use them exactly as listed, backtick-quoted.
 - For year-based questions, use the date/year column listed in the schema.
+- When the schema lists known stored values for a column, filter that column only with those exact values; never translate or guess a value.
 - Unless the user asks for a specific top-N result, do not set a result limit below 100; the application enforces the 100-row maximum.
 - Do not invent tables or columns.
 - The schema describes one National Sports Platform view; its business domain and description are given in the schema.
@@ -178,7 +179,49 @@ Question:
     )
 
     sql = _clean_sql_output(response.text)
+    if not sql.upper().startswith("CLARIFICATION:"):
+        unknown_value = _check_filter_values(sql, view_id, language)
+        if unknown_value:
+            return unknown_value
     return _apply_population_row_semantics(sql, question, view_id)
+
+
+def _check_filter_values(sql: str, view_id: str | None, language: str) -> str | None:
+    """Return a CLARIFICATION when a filter literal on a value-catalog column matches no stored value."""
+    effective_view = (view_id or BIGQUERY_TABLE_ID).lower()
+    columns = FILTER_VALUE_COLUMNS.get(effective_view, {})
+    if not columns:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read="bigquery")
+    except sqlglot.errors.ParseError:
+        return None
+
+    filters = []
+    for node in tree.find_all(exp.EQ, exp.NEQ, exp.Like, exp.ILike, exp.In):
+        column = node.this.find(exp.Column) if isinstance(node.this, exp.Expression) else None
+        if column is None or column.name.casefold() not in columns:
+            continue
+        literals = node.expressions if isinstance(node, exp.In) else [node.expression]
+        for literal in literals:
+            if isinstance(literal, exp.Literal) and literal.is_string:
+                filters.append((column.name.casefold(), literal.this, isinstance(node, (exp.Like, exp.ILike))))
+    if not filters:
+        return None
+
+    stored = get_filter_values(effective_view)
+    for column, literal, is_pattern in filters:
+        known = stored.get(column)
+        if not known:
+            return None
+        needle = literal.replace("%", "").casefold()
+        matched = any(needle in value.casefold() for value in known) if is_pattern else needle in {v.casefold() for v in known}
+        if not matched:
+            label_en, label_ar = columns[column]
+            if language == "ar":
+                return f"CLARIFICATION: لم أجد «{literal}» ضمن {label_ar}. القيم المتاحة: {'، '.join(known)}."
+            return f"CLARIFICATION: I couldn't find \"{literal}\" in {label_en}. Available values: {', '.join(known)}."
+    return None
 
 
 def _apply_population_row_semantics(sql: str, question: str, view_id: str | None) -> str:

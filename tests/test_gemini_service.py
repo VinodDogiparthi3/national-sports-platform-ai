@@ -203,5 +203,67 @@ class GenerateSqlTests(unittest.TestCase):
         self.assertIn("Which sports?", prompt)
 
 
+class RegionFilterTests(unittest.TestCase):
+    REGIONS = ["منطقة الرياض", "المنطقة الشرقية", "منطقة مكة المكرمة"]
+    TABLE = "`mos-gcp-host-dev-prj.dw_nsp_api_views.nsp_base_view_01`"
+
+    def generate(self, sql, question, language="en"):
+        with (
+            patch("gemini_service.get_bigquery_schema", return_value="schema"),
+            patch("gemini_service.get_filter_values", return_value={"region": self.REGIONS}),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=sql)),
+        ):
+            return generate_sql(question, language, "nsp_base_view_01")
+
+    def test_english_question_with_stored_arabic_value_passes(self):
+        sql = f"SELECT COUNT(DISTINCT contactid) FROM {self.TABLE} WHERE region = 'منطقة الرياض'"
+        self.assertEqual(self.generate(sql, "How many athletes are registered in Riyadh region?"), sql)
+
+    def test_arabic_question_with_substring_pattern_passes(self):
+        sql = f"SELECT COUNT(DISTINCT contactid) FROM {self.TABLE} WHERE region LIKE '%الرياض%'"
+        self.assertEqual(self.generate(sql, "كم عدد الرياضيين في منطقة الرياض؟", "ar"), sql)
+
+    def test_english_only_literal_is_rejected_with_available_regions(self):
+        sql = f"SELECT COUNT(DISTINCT contactid) FROM {self.TABLE} WHERE LOWER(region) LIKE '%riyadh%'"
+        result = self.generate(sql, "How many athletes are registered in Riyadh region?")
+
+        self.assertTrue(result.startswith("CLARIFICATION:"))
+        self.assertIn("منطقة الرياض", result)
+
+    def test_unknown_region_returns_localized_clarification(self):
+        sql = f"SELECT COUNT(*) FROM {self.TABLE} WHERE region = 'منطة غير موجودة'"
+        arabic = self.generate(sql, "كم عدد الرياضيين؟", "ar")
+        english = self.generate(sql, "How many athletes?")
+
+        self.assertIn("القيم المتاحة", arabic)
+        self.assertIn("Available values", english)
+
+    def test_in_list_is_checked_and_queries_without_region_are_untouched(self):
+        bad = f"SELECT COUNT(*) FROM {self.TABLE} WHERE region IN ('منطقة الرياض', 'Jeddah')"
+        plain = f"SELECT COUNT(*) FROM {self.TABLE} WHERE registration_year = 2025"
+
+        self.assertTrue(self.generate(bad, "q").startswith("CLARIFICATION:"))
+        self.assertEqual(self.generate(plain, "q"), plain)
+
+    def test_lookup_failure_does_not_block_generation(self):
+        sql = f"SELECT COUNT(*) FROM {self.TABLE} WHERE LOWER(region) LIKE '%riyadh%'"
+        with (
+            patch("gemini_service.get_bigquery_schema", return_value="schema"),
+            patch("gemini_service.get_filter_values", return_value={}),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=sql)),
+        ):
+            self.assertEqual(generate_sql("q", "en", "nsp_base_view_01"), sql)
+
+    def test_other_views_are_not_checked(self):
+        sql = "SELECT COUNT(*) FROM `p.d.fr_base_view_01` WHERE region = 'anything'"
+        with (
+            patch("gemini_service.get_bigquery_schema", return_value="schema"),
+            patch("gemini_service.get_filter_values") as values,
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=sql)),
+        ):
+            self.assertEqual(generate_sql("q", "en", "fr_base_view_01"), sql)
+        values.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

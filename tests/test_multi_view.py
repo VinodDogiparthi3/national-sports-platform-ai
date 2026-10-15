@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import app
+import schema_metadata
+from config import MAX_BYTES_PROCESSED
 from schema_metadata import get_bigquery_schema
 from sql_guardrails import OutOfScopeQueryError, validate_sql
 from view_catalog import APPROVED_VIEWS, find_view, get_view, is_join_verified
@@ -195,3 +197,48 @@ class ErrorMessageTests(unittest.TestCase):
         self.assertIn("permission", app.get_error_message(ex.Forbidden("x"), "en"))
         self.assertIn("BigQuery", app.get_error_message(ex.BadRequest("x"), "en"))
         self.assertEqual(app.get_error_message(RuntimeError("x"), "en"), "Unable to process the request.")
+
+
+class FilterValueCatalogTests(unittest.TestCase):
+    def setUp(self):
+        schema_metadata.clear_schema_cache()
+        self.addCleanup(schema_metadata.clear_schema_cache)
+
+    def test_billing_cap_is_exactly_250_mib(self):
+        self.assertEqual(MAX_BYTES_PROCESSED, 250 * 1024 * 1024)
+
+    def test_values_are_read_through_guarded_execute_and_cached(self):
+        rows = [("منطقة الرياض",), ("المنطقة الشرقية",)]
+        with patch("sql_guardrails.get_allowed_columns", return_value={"region"}), patch(
+            "bigquery_database.execute_sql", return_value=(["region"], rows)
+        ) as execute:
+            first = schema_metadata.get_filter_values("nsp_base_view_01")
+            second = schema_metadata.get_filter_values("nsp_base_view_01")
+
+        self.assertEqual(first, {"region": ["منطقة الرياض", "المنطقة الشرقية"]})
+        self.assertEqual(second, first)
+        execute.assert_called_once()
+        self.assertIn("SELECT DISTINCT `region`", execute.call_args.args[0])
+        self.assertIn("LIMIT 100", execute.call_args.args[0])
+
+    def test_views_without_filter_columns_never_query(self):
+        with patch("bigquery_database.execute_sql") as execute:
+            self.assertEqual(schema_metadata.get_filter_values("budget_view_01"), {})
+        execute.assert_not_called()
+
+    def test_lookup_failure_returns_empty_and_is_not_cached(self):
+        with patch("sql_guardrails.get_allowed_columns", return_value={"region"}), patch(
+            "bigquery_database.execute_sql", side_effect=RuntimeError("down")
+        ):
+            self.assertEqual(schema_metadata.get_filter_values("nsp_base_view_01"), {})
+        self.assertNotIn("nsp_base_view_01", schema_metadata._values_cache)
+
+    def test_schema_context_lists_stored_region_values(self):
+        fields = [("region", "STRING", "NULLABLE"), ("contactid", "STRING", "NULLABLE")]
+        with patch("schema_metadata.get_view_columns", return_value=fields), patch(
+            "schema_metadata.get_filter_values", return_value={"region": ["منطقة الرياض"]}
+        ):
+            schema = get_bigquery_schema("nsp_base_view_01")
+
+        self.assertIn("- منطقة الرياض", schema)
+        self.assertIn("Filter `region` only with these exact values", schema)

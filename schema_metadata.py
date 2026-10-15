@@ -17,12 +17,19 @@ FULL_TABLE_ID = (
 )
 
 _cache: dict[str, tuple[float, list[tuple[str, str, str]]]] = {}
+_values_cache: dict[str, tuple[float, dict[str, list[str]]]] = {}
 _lock = threading.Lock()
+
+# view -> column -> (English label, Arabic label); values are read from BigQuery, never hardcoded.
+FILTER_VALUE_COLUMNS: dict[str, dict[str, tuple[str, str]]] = {
+    "nsp_base_view_01": {"region": ("region", "المنطقة")},
+}
 
 
 def clear_schema_cache() -> None:
     with _lock:
         _cache.clear()
+        _values_cache.clear()
 
 
 def get_view_columns(view_id: str) -> list[tuple[str, str, str]]:
@@ -43,6 +50,39 @@ def get_view_columns(view_id: str) -> list[tuple[str, str, str]]:
     with _lock:
         _cache[key] = (time.monotonic(), columns)
     return columns
+
+
+def get_filter_values(view_id: str) -> dict[str, list[str]]:
+    """Distinct stored values of the view's filter columns; {} when none are configured or the lookup fails."""
+    view = get_view(view_id)
+    columns = FILTER_VALUE_COLUMNS.get(view.view.lower(), {}) if view else {}
+    if not columns:
+        return {}
+
+    key = view.view.lower()
+    with _lock:
+        cached = _values_cache.get(key)
+        if cached and time.monotonic() - cached[0] < SCHEMA_CACHE_TTL_SECONDS:
+            return cached[1]
+
+    from bigquery_database import execute_sql
+    from sql_guardrails import validate_sql
+
+    values: dict[str, list[str]] = {}
+    try:
+        for column in columns:
+            sql = validate_sql(
+                f"SELECT DISTINCT `{column}` FROM `{view.full_id}` WHERE `{column}` IS NOT NULL ORDER BY `{column}`"
+            )
+            _, rows = execute_sql(sql)
+            values[column] = [str(row[0]) for row in rows if row[0] is not None]
+    except Exception as e:
+        print(f"\nERROR LOADING FILTER VALUES FOR {view.full_id}: {type(e).__name__}: {e}")
+        return {}
+
+    with _lock:
+        _values_cache[key] = (time.monotonic(), values)
+    return values
 
 
 def get_all_view_columns() -> dict[str, list[tuple[str, str, str]]]:
@@ -80,6 +120,14 @@ Population estimate row semantics:
 - The row whose `age_group` is 'Total' already contains the overall population estimate.
 - For an overall estimate, filter to `age_group` = 'Total'; do not sum it with age bands.
 - For age-group breakdowns, exclude `age_group` = 'Total' before calculating or presenting band totals.
+"""
+    for column, stored in get_filter_values(view.view).items():
+        if stored:
+            view_instructions += f"""
+Known stored values of `{column}` (exact spelling, in the stored language):
+{chr(10).join(f"- {value}" for value in stored)}
+- Filter `{column}` only with these exact values (or a substring of one with LIKE), mapping the user's wording in English or Arabic to the matching value.
+- If no value matches, do not guess: return a CLARIFICATION.
 """
 
     schema_text = f"""
