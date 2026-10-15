@@ -108,11 +108,21 @@ def get_bigquery_schema(view_id: str | None = None) -> str:
     if view is None:
         raise ValueError(f"View is not approved: {view_id}")
 
+    view_columns = get_view_columns(view.view)
     columns = [
         f"{name} {ftype} {mode}"
-        for name, ftype, mode in get_view_columns(view.view)
+        for name, ftype, mode in view_columns
     ]
     view_instructions = ""
+    if view.view == "nsp_base_view_01" and any(
+        name.casefold() == "idv_classificationrecordid" for name, _, _ in view_columns
+    ):
+        view_instructions = """
+
+Athlete count semantics:
+- For questions asking how many athletes are registered or for an athlete count, count distinct `idv_classificationrecordid`.
+- Do not use `contactid` for this athlete registration metric.
+"""
     if view.view == "population_estimates_statistics_view_01":
         view_instructions = """
 

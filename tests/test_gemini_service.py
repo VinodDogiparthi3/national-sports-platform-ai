@@ -14,6 +14,7 @@ from gemini_service import (
     translate_texts,
     translate_questions_to_arabic,
 )
+from schema_metadata import get_bigquery_schema
 
 
 class GenerateSqlTests(unittest.TestCase):
@@ -25,6 +26,17 @@ class GenerateSqlTests(unittest.TestCase):
         )
 
         self.assertEqual(generate_sql("question"), "SELECT 1")
+
+    @patch("schema_metadata.get_filter_values", return_value={})
+    @patch(
+        "schema_metadata.get_view_columns",
+        return_value=[("idv_classificationrecordid", "STRING", "NULLABLE"), ("contactid", "STRING", "NULLABLE")],
+    )
+    def test_nsp_schema_defines_athlete_count_identifier(self, _get_view_columns, _get_filter_values):
+        schema = get_bigquery_schema("nsp_base_view_01")
+
+        self.assertIn("count distinct `idv_classificationrecordid`", schema)
+        self.assertIn("Do not use `contactid`", schema)
 
     @patch("gemini_service.get_bigquery_schema", return_value="schema")
     @patch("gemini_service.client.models.generate_content")
