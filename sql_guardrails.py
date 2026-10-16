@@ -75,6 +75,7 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
         )
 
     used_views = set()
+    resolved_sources = {}
 
     for table in tables:
 
@@ -90,6 +91,7 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
             )
 
         used_views.add(approved.source_id)
+        resolved_sources[approved.source_id] = approved
 
     # Never assume relationships between views.
     if not is_join_verified(used_views):
@@ -101,6 +103,18 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
     # Dynamic column allowlist
     # -------------------------
     allowed_columns = get_allowed_columns(used_views)
+    dynamic_sources = {
+        source_id
+        for source_id in used_views
+        if getattr(resolved_sources[source_id], "query_authorized", False)
+    }
+
+    if dynamic_sources:
+        for select_expression in expression.expressions:
+            if isinstance(select_expression, exp.Star) or (
+                isinstance(select_expression, exp.Column) and select_expression.name == "*"
+            ):
+                raise OutOfScopeQueryError("SELECT * is not allowed for dynamic sources; use explicitly authorized columns.")
 
     # -------------------------
     # Collect SELECT aliases

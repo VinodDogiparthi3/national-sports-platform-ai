@@ -159,3 +159,17 @@ export function parseResultCards(markdown, context = "") {
 
   return null;
 }
+
+export function parseViewResults(viewResults) {
+  return viewResults.map((viewResult) => {
+    const sections = splitResultsMarkdown(viewResult.markdown || "");
+    const summary = sections?.summary || "";
+    const results = sections?.results || viewResult.markdown || "";
+    return {
+      ...viewResult,
+      summary,
+      results,
+      cards: parseResultCards(results, `${viewResult.display_name} ${summary}`),
+    };
+  });
+}

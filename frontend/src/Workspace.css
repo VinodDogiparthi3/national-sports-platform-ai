@@ -197,6 +197,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .thinking-indicator > span:nth-child(2) { background: var(--teal); animation-delay: .15s; }
 .thinking-indicator > span:nth-child(3) { margin-right: 5px; background: var(--blue); animation-delay: .3s; }
 .thinking-indicator p { margin: 0; font-size: 11px; }
+.thinking-indicator { flex-wrap: wrap; }
+.waiting-experience { flex-basis: 100%; display: grid; gap: 8px; margin-top: 6px; }
+.waiting-steps { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 11px; }
+.waiting-step { display: inline-flex; align-items: center; gap: 6px; color: #9aa6a0; transition: color .3s; }
+.waiting-step-mark { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; }
+.waiting-step.active { color: var(--primary); font-weight: 600; }
+.waiting-step.active .waiting-step-mark { background: currentColor; animation: pulse 1s infinite alternate; }
+.waiting-step.done { color: var(--teal); }
+.waiting-step.done .waiting-step-mark { background: currentColor; }
+.waiting-tip { margin: 0; font-size: 11px; line-height: 1.5; color: #77847c; animation: tip-in .5s ease; }
+@keyframes tip-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .waiting-tip, .waiting-step.active .waiting-step-mark { animation: none; } }
 
 .composer-wrap { position: sticky; bottom: 0; z-index: 10; padding: 13px 20px 10px; background: linear-gradient(transparent, rgba(246, 244, 236, .96) 20%, var(--paper) 100%); }
 .composer-wrap-landing { position: relative; bottom: auto; z-index: auto; width: min(900px, 100%); margin: 18px auto 0; padding: 0; background: transparent; }

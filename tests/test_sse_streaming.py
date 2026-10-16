@@ -1,4 +1,5 @@
 import os
+import json
 import unittest
 from unittest.mock import patch
 
@@ -6,7 +7,18 @@ from fastapi.testclient import TestClient
 
 import app
 from config import BIGQUERY_DATASET_ID, BIGQUERY_PROJECT_ID, BIGQUERY_TABLE_ID
+from bigquery_catalog import ColumnMetadata, DiscoveredSource
+from bigquery_database import QueryBudgetExceeded
 from gemini_service import QueryPlan
+
+
+def parse_events(text):
+    events = []
+    for block in text.strip().split("\n\n"):
+        lines = block.splitlines()
+        if len(lines) >= 2:
+            events.append((lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: "))))
+    return events
 
 
 class StreamingAskTests(unittest.TestCase):
@@ -67,7 +79,57 @@ class StreamingAskTests(unittest.TestCase):
         self.assertEqual(answers.call_count, 2)
         self.assertIn("### NSP Base View", response.text)
         self.assertIn("### Sports Competitions and Athlete Performance View", response.text)
+        view_results = [payload for name, payload in parse_events(response.text) if name == "view_result"]
+        self.assertEqual([result["view_id"] for result in view_results], ["nsp_base_view_01", "sopc_view_01"])
+        self.assertEqual([result["display_name"] for result in view_results], [
+            "NSP Base View",
+            "Sports Competitions and Athlete Performance View",
+        ])
+        self.assertNotIn("### NSP Base View", view_results[0]["markdown"])
+        self.assertNotIn("### Sports Competitions and Athlete Performance View", view_results[1]["markdown"])
+        self.assertIn("Athletes: 12", view_results[0]["markdown"])
+        self.assertIn("Athletes: 7", view_results[1]["markdown"])
         self.assertIn('event: done\ndata: {"question": "both"}', response.text)
+
+    def test_dynamic_source_passes_real_validator_only_with_policy_authorization(self):
+        source = DiscoveredSource(
+            project=BIGQUERY_PROJECT_ID,
+            dataset="dw_sharepoint",
+            name="budget_dynamic_view",
+            object_type="VIEW",
+            description="Budget source",
+            columns=(ColumnMetadata("budget_total", "NUMERIC", "NULLABLE"),),
+            query_authorized=True,
+        )
+        sql = f"SELECT `budget_total` FROM `{source.full_id}`"
+        allowed_plan = QueryPlan(queries=((source.source_id, sql),))
+        with (
+            patch("app.generate_query_plan", return_value=allowed_plan),
+            patch("view_catalog.BIGQUERY_DYNAMIC_ALLOWED_DATASETS", frozenset({"dw_sharepoint"})),
+            patch("view_catalog.get_authorized_tables", return_value=()),
+            patch("view_catalog.get_dynamic_authorized_sources", return_value=(source,)),
+            patch("app.execute_sql_batch", return_value=[(["budget_total"], [(1250000,)])]) as execute,
+            patch("app.generate_answer_stream", return_value=iter(["Budget total: 1250000"])),
+        ):
+            response = self.client.post("/ask/stream", json={"question": "What is the budget?"})
+
+        self.assertIn("Budget total: 1250000", response.text)
+        self.assertIn('"object_type": "VIEW"', response.text)
+        self.assertIn('event: done', response.text)
+        execute.assert_called_once_with([sql + " LIMIT 100"])
+
+        denied_plan = QueryPlan(queries=(("dw_sharepoint.unlisted_view", sql.replace(source.table if hasattr(source, "table") else source.name, "unlisted_view")),))
+        with (
+            patch("app.generate_query_plan", return_value=denied_plan),
+            patch("view_catalog.BIGQUERY_DYNAMIC_ALLOWED_DATASETS", frozenset({"dw_sharepoint"})),
+            patch("view_catalog.get_authorized_tables", return_value=()),
+            patch("view_catalog.get_dynamic_authorized_sources", return_value=(source,)),
+            patch("app.execute_sql_batch") as denied_execute,
+        ):
+            denied = self.client.post("/ask/stream", json={"question": "unlisted"})
+
+        denied_execute.assert_not_called()
+        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, denied.text)
         self.assertIn('"conversation_context": {"pending": null', response.text)
 
     def test_year_selection_uses_pending_original_question_and_selected_view(self):
@@ -217,6 +279,35 @@ class StreamingAskTests(unittest.TestCase):
             response.json(),
             {"question": self.question, "answer": "Legacy answer"},
         )
+
+    def test_json_budget_exceeded_is_explained_without_answer_generation(self):
+        plan = self.plan(self.sql)
+        with (
+            patch("app.generate_query_plan", return_value=plan),
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql_batch", side_effect=QueryBudgetExceeded("combined cap")) as execute,
+            patch("app.generate_answer") as answer,
+        ):
+            response = self.client.post("/ask", json={"question": self.question})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("combined BigQuery estimate exceeds the 250 MiB limit", response.json()["answer"])
+        execute.assert_called_once()
+        answer.assert_not_called()
+
+    def test_sse_budget_exceeded_emits_message_and_done_without_query_results(self):
+        with (
+            patch("app.generate_query_plan", return_value=self.plan(self.sql)),
+            patch("app.validate_sql", side_effect=lambda query: query),
+            patch("app.execute_sql_batch", side_effect=QueryBudgetExceeded("combined cap")),
+            patch("app.generate_answer_stream") as answer,
+        ):
+            response = self.client.post("/ask/stream", json={"question": self.question})
+
+        self.assertIn("combined BigQuery estimate exceeds the 250 MiB limit", response.text)
+        self.assertIn("event: done", response.text)
+        self.assertNotIn("event: error", response.text)
+        answer.assert_not_called()
 
     def test_version_endpoint_reports_api_and_cloud_run_revision(self):
         with (

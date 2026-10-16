@@ -1,10 +1,17 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import threading
 import time
 
 from google.cloud import bigquery
 
-from config import BIGQUERY_PROJECT_ID
+from bigquery_catalog import CatalogUnavailableError, DiscoveredSource, discover_project_catalog
+from config import (
+    BIGQUERY_DYNAMIC_ALLOWED_DATASETS,
+    BIGQUERY_DYNAMIC_CATALOG_ENABLED,
+    BIGQUERY_DYNAMIC_ROUTING_ENABLED,
+    BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES,
+    BIGQUERY_PROJECT_ID,
+)
 
 DEFAULT_VIEW_ID = "nsp_base_view_01"
 
@@ -255,6 +262,57 @@ def get_approved_tables() -> tuple[ApprovedTable, ...]:
     return result
 
 
+def get_discovered_sources(*, force_refresh: bool = False) -> tuple[DiscoveredSource, ...]:
+    """Return project-wide metadata inventory; these objects are not query authorization."""
+    if not BIGQUERY_DYNAMIC_CATALOG_ENABLED:
+        return ()
+    return discover_project_catalog(force_refresh=force_refresh).sources
+
+
+def get_dynamic_authorized_sources() -> tuple[DiscoveredSource, ...]:
+    """Return only discovered objects covered by explicit dataset and column policies."""
+    if not BIGQUERY_DYNAMIC_CATALOG_ENABLED:
+        return ()
+    try:
+        discovered_sources = get_discovered_sources()
+    except CatalogUnavailableError as error:
+        print(f"\nPROJECT CATALOG UNAVAILABLE: {type(error).__name__}; using static source catalog.")
+        return ()
+    if not BIGQUERY_DYNAMIC_ROUTING_ENABLED:
+        return ()
+    if not BIGQUERY_DYNAMIC_ALLOWED_DATASETS or not BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES:
+        return ()
+
+    policies = {
+        source_id.casefold(): {column.casefold() for column in columns}
+        for source_id, columns in BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES.items()
+    }
+    supported_types = {"TABLE", "VIEW", "MATERIALIZED_VIEW", "EXTERNAL_TABLE"}
+    authorized = []
+    for source in discovered_sources:
+        if source.project.casefold() != BIGQUERY_PROJECT_ID.casefold():
+            continue
+        if source.dataset.casefold() not in BIGQUERY_DYNAMIC_ALLOWED_DATASETS:
+            continue
+        if source.object_type not in supported_types or source.metadata_error:
+            continue
+        allowed_columns = policies.get(source.source_id.casefold())
+        if not allowed_columns:
+            continue
+        columns_by_name = {column.name.casefold(): column for column in source.columns}
+        if not allowed_columns <= columns_by_name.keys():
+            continue
+        selected_columns = tuple(
+            column
+            for column in source.columns
+            if column.name.casefold() in allowed_columns and not column.policy_tags
+        )
+        if not selected_columns:
+            continue
+        authorized.append(replace(source, columns=selected_columns, query_authorized=True))
+    return tuple(authorized)
+
+
 def get_authorized_tables() -> tuple[ApprovedTable, ...]:
     """Return discovered tables intersected with the explicit physical-table allowlist."""
     authorized = AUTHORIZED_TABLES
@@ -265,15 +323,26 @@ def get_authorized_tables() -> tuple[ApprovedTable, ...]:
     )
 
 
-def get_source(source_id: str) -> ApprovedView | ApprovedTable | None:
+def get_source(source_id: str) -> ApprovedView | ApprovedTable | DiscoveredSource | None:
     view = get_view(source_id)
     if view:
         return view
     normalized = (source_id or "").casefold()
-    return next(
+    static_table = next(
         (table for table in get_authorized_tables() if table.source_id.casefold() == normalized),
         None,
     )
+    if static_table:
+        return static_table
+    return next(
+        (source for source in get_dynamic_authorized_sources() if source.source_id.casefold() == normalized),
+        None,
+    )
+
+
+def get_queryable_sources() -> tuple[ApprovedView | ApprovedTable | DiscoveredSource, ...]:
+    """Sources eligible for routing and SQL validation; discovery-only records are excluded."""
+    return (*APPROVED_VIEWS, *get_authorized_tables(), *get_dynamic_authorized_sources())
 
 
 def find_view(project: str, dataset: str, view: str) -> ApprovedView | None:
@@ -283,11 +352,13 @@ def find_view(project: str, dataset: str, view: str) -> ApprovedView | None:
     return None
 
 
-def find_source(project: str, dataset: str, object_name: str) -> ApprovedView | ApprovedTable | None:
+def find_source(project: str, dataset: str, object_name: str) -> ApprovedView | ApprovedTable | DiscoveredSource | None:
     view = find_view(project, dataset, object_name)
     if view:
         return view
-    if project.lower() != BIGQUERY_PROJECT_ID.lower() or dataset.lower() not in APPROVED_TABLE_DATASETS:
+    if project.lower() != BIGQUERY_PROJECT_ID.lower():
+        return None
+    if dataset.lower() not in APPROVED_TABLE_DATASETS and dataset.lower() not in BIGQUERY_DYNAMIC_ALLOWED_DATASETS:
         return None
     return get_source(f"{dataset}.{object_name}")
 

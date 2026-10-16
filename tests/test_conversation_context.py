@@ -36,6 +36,7 @@ class PendingSelectionTests(unittest.TestCase):
     def test_first_and_second_select_one_view(self):
         self.assertEqual(resolve_pending_selection("first", self.views)["view_ids"], ["nsp_base_view_01"])
         self.assertEqual(resolve_pending_selection("الأول", self.views)["view_ids"], ["nsp_base_view_01"])
+        self.assertEqual(resolve_pending_selection("الاول", self.views)["view_ids"], ["nsp_base_view_01"])
         self.assertEqual(resolve_pending_selection("الثاني", self.views)["view_ids"], ["sopc_view_01"])
 
     def test_year_selection_preserves_question_and_selects_matching_view(self):
@@ -63,7 +64,8 @@ class PendingSelectionTests(unittest.TestCase):
                 "options": [{"view_id": "dw_ms_crm_onprem.not_authorized"}],
             }
         }
-        self.assertIsNone(resolve_pending_selection("all", context))
+        with patch("conversation_context.get_source", return_value=None):
+            self.assertIsNone(resolve_pending_selection("all", context))
 
 
 class FollowUpIntentTests(unittest.TestCase):

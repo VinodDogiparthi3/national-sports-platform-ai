@@ -5,6 +5,10 @@ from config import BIGQUERY_PROJECT_ID, MAX_BYTES_PROCESSED, QUERY_TIMEOUT_SECON
 client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
 
 
+class QueryBudgetExceeded(ValueError):
+    pass
+
+
 def dry_run_sql(sql: str) -> int:
 
     job_config = bigquery.QueryJobConfig(
@@ -22,7 +26,7 @@ def dry_run_sql(sql: str) -> int:
     )
 
     if bytes_processed > MAX_BYTES_PROCESSED:
-        raise ValueError(
+        raise QueryBudgetExceeded(
             "Query exceeds the configured "
             f"{MAX_BYTES_PROCESSED:,}-byte processing limit. "
             f"Estimated bytes: {bytes_processed}"
@@ -35,7 +39,7 @@ def _preflight_sqls(sqls: list[str]) -> list[int]:
     estimates = [dry_run_sql(sql) for sql in sqls]
     total_estimated = sum(estimates)
     if total_estimated > MAX_BYTES_PROCESSED:
-        raise ValueError(
+        raise QueryBudgetExceeded(
             "Combined queries exceed the configured "
             f"{MAX_BYTES_PROCESSED:,}-byte request budget. "
             f"Estimated bytes: {total_estimated}"
@@ -89,8 +93,15 @@ def get_export_row_count(sql: str) -> int:
 
 
 def get_export_row_counts(sqls: list[str]) -> list[int]:
-    """Preflight every export query together before running any row-count query."""
-    _preflight_sqls(sqls)
+    """Budget export preparation plus the later workbook download as one user request."""
+    estimates = _preflight_sqls(sqls)
+    complete_export_estimate = sum(estimates) * 2
+    if complete_export_estimate > MAX_BYTES_PROCESSED:
+        raise ValueError(
+            "Combined export preparation and download exceed the configured "
+            f"{MAX_BYTES_PROCESSED:,}-byte request budget. "
+            f"Estimated bytes: {complete_export_estimate}"
+        )
     row_counts = []
     for sql in sqls:
         result = client.query(

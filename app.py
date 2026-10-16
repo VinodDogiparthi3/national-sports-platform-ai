@@ -21,6 +21,7 @@ from bigquery_database import (
     execute_sql_batch,
     get_export_row_counts,
     stream_query_rows_batch,
+    QueryBudgetExceeded,
 )
 from config import (
     EXPORT_CONTEXT_TTL_SECONDS,
@@ -206,7 +207,7 @@ def get_source_info(sql: str) -> dict | None:
         "dataset": first.dataset,
         "view": getattr(first, "view", first.source_id),
         "object_type": first.object_type,
-        "object_name": getattr(first, "table", first.source_id),
+        "object_name": getattr(first, "table", getattr(first, "name", first.source_id)),
         "display_name": first.display_name,
         "domain": first.domain,
         "sql": sql,
@@ -221,6 +222,17 @@ NO_DATA_MESSAGES = {
 NO_PREVIOUS_RESULT_MESSAGES = {
     "en": "There are no previous results in this conversation to use.",
     "ar": "لا توجد نتائج سابقة في هذه المحادثة لاستخدامها.",
+}
+
+BUDGET_EXCEEDED_MESSAGES = {
+    "en": (
+        "This request was blocked because its combined BigQuery estimate exceeds the 250 MiB limit. "
+        "Narrow the request by year, region, sport, or another filter and try again."
+    ),
+    "ar": (
+        "تم إيقاف الطلب لأن تقدير استعلامات BigQuery المجمّع يتجاوز حد 250 MiB. "
+        "يرجى تضييق الطلب حسب السنة أو المنطقة أو الرياضة أو مرشح آخر ثم المحاولة مجددًا."
+    ),
 }
 
 ERROR_MESSAGES = {
@@ -367,10 +379,10 @@ def _source_records(queries):
 
 
 def _format_view_answer(view_id: str, answer: str) -> str:
-    from view_catalog import get_view
+    from view_catalog import get_source
 
-    view = get_view(view_id)
-    return f"### {view.display_name if view else view_id}\n\n{answer}"
+    source = get_source(view_id)
+    return f"### {source.display_name if source else view_id}\n\n{answer}"
 
 
 def _localized_headers(columns: list[str], language: str) -> list[str]:
@@ -602,10 +614,12 @@ def download_excel_export(token: str):
         query_rows = stream_query_rows_batch([sql for _, sql in export_queries])
         sheets = []
         for (view_id, _), (columns, rows) in zip(export_queries, query_rows):
-            from view_catalog import get_view
+            source = None
+            if view_id:
+                from view_catalog import get_source
 
-            view = get_view(view_id or "")
-            title = view.display_name if view else "Data"
+                source = get_source(view_id)
+            title = source.display_name if source else "Data"
             sheets.append((title, _localized_headers(columns, language), rows))
         path, _ = write_workbook_sheets(sheets, language=language, max_rows=EXPORT_MAX_ROWS)
     except ExportTooLargeError:
@@ -707,6 +721,12 @@ def ask(request: QuestionRequest):
             response["conversation_context"] = plan.conversation_context
         return response
 
+    except QueryBudgetExceeded:
+        return {
+            "question": request.question,
+            "answer": BUDGET_EXCEEDED_MESSAGES[response_language],
+        }
+
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -807,22 +827,41 @@ def ask_stream(request: QuestionRequest):
                 return
 
             yield _sse_event("status", {"step": "analyzing"})
-            for source in _source_records(safe_queries):
+            source_records = _source_records(safe_queries)
+            for source in source_records:
                 yield _sse_event("source", source)
+            source_by_view = {source["view"]: source for source in source_records}
 
-            query_results = execute_sql_batch([sql for _, sql in safe_queries])
+            try:
+                query_results = execute_sql_batch([sql for _, sql in safe_queries])
+            except QueryBudgetExceeded:
+                yield _sse_event("token", {"text": BUDGET_EXCEEDED_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
             yield _sse_event("status", {"step": "preparing"})
             for (view_id, _), (columns, rows) in zip(safe_queries, query_results):
+                from view_catalog import get_view
+
+                view = get_view(view_id)
+                answer_parts = []
                 if len(safe_queries) > 1:
-                    heading = _format_view_answer(view_id, "").rstrip()
-                    yield _sse_event("token", {"text": f"{heading}\n\n"})
+                    heading = view.display_name if view else view_id
+                    yield _sse_event("token", {"text": f"### {heading}\n\n"})
                 if not rows:
-                    yield _sse_event("token", {"text": NO_DATA_MESSAGES[response_language]})
-                    continue
-                for text in generate_answer_stream(request.question, columns, rows, response_language):
-                    yield _sse_event("token", {"text": text})
+                    answer_parts.append(NO_DATA_MESSAGES[response_language])
+                    yield _sse_event("token", {"text": answer_parts[-1]})
+                else:
+                    for text in generate_answer_stream(request.question, columns, rows, response_language):
+                        answer_parts.append(text)
+                        yield _sse_event("token", {"text": text})
                 if len(safe_queries) > 1:
                     yield _sse_event("token", {"text": "\n\n"})
+                yield _sse_event("view_result", {
+                    "view_id": view_id,
+                    "display_name": view.display_name if view else view_id,
+                    "markdown": "".join(answer_parts),
+                    "source": source_by_view.get(view_id),
+                })
 
             conversation_context = plan.conversation_context or {
                 "pending": None,

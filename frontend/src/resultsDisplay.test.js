@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { parseResultCards, splitResultsMarkdown } from "./resultsDisplay.js";
+import { parseResultCards, parseViewResults, splitResultsMarkdown } from "./resultsDisplay.js";
 
 describe("splitResultsMarkdown", () => {
   it("keeps the heading visible and separates a standalone total", () => {
@@ -97,5 +97,31 @@ describe("parseResultCards", () => {
 
   it("returns null for ordinary prose", () => {
     assert.equal(parseResultCards("The data shows steady participation across all regions."), null);
+  });
+});
+
+describe("parseViewResults", () => {
+  it("keeps multiple views, source details, and numeric values separate", () => {
+    const views = parseViewResults([
+      {
+        view_id: "budget_view_01",
+        display_name: "Budget View",
+        markdown: "### Results\n\n| Project | Budget Total |\n| --- | --- |\n| Community Sports | 1250000 |",
+        source: { dataset: "dw_sharepoint_views", object_name: "budget_view_01" },
+      },
+      {
+        view_id: "budget_control_view_01",
+        display_name: "Budget Control View",
+        markdown: "### Results\n\n| Agency | Operating Expenditure |\n| --- | --- |\n| Sports Authority | 415000 |",
+        source: { dataset: "dw_sharepoint_views", object_name: "budget_control_view_01" },
+      },
+    ]);
+
+    assert.deepEqual(views.map(({ display_name }) => display_name), ["Budget View", "Budget Control View"]);
+    assert.deepEqual(views.map(({ cards }) => [cards[0].label, cards[0].value]), [
+      ["Community Sports", "1250000"],
+      ["Sports Authority", "415000"],
+    ]);
+    assert.deepEqual(views.map(({ source }) => source.object_name), ["budget_view_01", "budget_control_view_01"]);
   });
 });

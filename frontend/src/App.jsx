@@ -9,7 +9,8 @@ import {
   mergeSources,
   resolveDownloadUrl,
 } from "./exportContext";
-import { parseResultCards, splitResultsMarkdown } from "./resultsDisplay";
+import { parseResultCards, parseViewResults, splitResultsMarkdown } from "./resultsDisplay";
+import { TIP_ROTATION_MS, nextTipIndex, stepState, waitingTips } from "./waitingTips";
 import {
   ArrowUpRight,
   ArrowUp,
@@ -105,6 +106,7 @@ const interfaceText = {
     genericError: "Unable to process the request. Please try again.",
     downloadExcel: "Download Excel (.xlsx)",
     processingSteps: ["Understanding your question…", "Analyzing sports data…", "Preparing your answer…"],
+    stepLabels: ["Understand", "Analyze", "Prepare"],
     inputPlaceholder: "Ask anything about National Sports Platform data...",
     inputLabel: "Ask a question",
     send: "Send question",
@@ -168,6 +170,7 @@ const interfaceText = {
     genericError: "تعذر معالجة الطلب. يرجى المحاولة مرة أخرى.",
     downloadExcel: "تنزيل Excel (.xlsx)",
     processingSteps: ["جارٍ فهم سؤالك…", "جارٍ تحليل البيانات الرياضية…", "جارٍ إعداد الإجابة…"],
+    stepLabels: ["الفهم", "التحليل", "الإعداد"],
     inputPlaceholder: "اسأل عن أي بيانات في المنصة الوطنية للرياضة...",
     inputLabel: "اكتب سؤالاً",
     send: "إرسال السؤال",
@@ -255,6 +258,32 @@ function QuickInsightCard({ question, category, index, onSelect }) {
       </span>
       <ArrowUpRight className="insight-arrow" size={16} />
     </button>
+  );
+}
+
+function WaitingExperience({ labels, currentStep, tips }) {
+  const [tipIndex, setTipIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setTipIndex((index) => nextTipIndex(index, tips.length)),
+      TIP_ROTATION_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [tips.length]);
+
+  return (
+    <div className="waiting-experience">
+      <ol className="waiting-steps">
+        {labels.map((label, index) => (
+          <li key={label} className={`waiting-step ${stepState(index, currentStep)}`}>
+            <span className="waiting-step-mark" aria-hidden="true" />
+            {label}
+          </li>
+        ))}
+      </ol>
+      <p className="waiting-tip" key={tipIndex} aria-hidden="true">{tips[tipIndex]}</p>
+    </div>
   );
 }
 
@@ -525,6 +554,7 @@ function App() {
       let exportContext = null;
       let conversationContext = null;
       let sources = [];
+      let viewResults = [];
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
@@ -544,6 +574,10 @@ function App() {
         if (event === "source") {
           sources = mergeSources(sources, payload);
           updateAssistant({ sources });
+        }
+        if (event === "view_result") {
+          viewResults = [...viewResults, payload];
+          updateAssistant({ viewResults });
         }
         if (event === "token") {
           streamedText += payload.text;
@@ -575,6 +609,7 @@ function App() {
         ...(conversationContext ? { conversationContext } : {}),
         ...(sources.length === 1 ? { source: sources[0] } : {}),
         ...(sources.length > 1 ? { sources } : {}),
+        ...(viewResults.length ? { viewResults } : {}),
       };
       const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -870,7 +905,10 @@ function App() {
                   )}
                   {(() => {
                     const responseText = message.displayTranslations?.[language] || message.text;
-                    const resultSections = message.role === "assistant" && message.exportContext
+                    const viewResults = message.role === "assistant" && message.viewResults?.length
+                      ? parseViewResults(message.viewResults)
+                      : null;
+                    const resultSections = message.role === "assistant" && !viewResults && message.exportContext
                       ? splitResultsMarkdown(responseText)
                       : null;
                     const resultCards = resultSections
@@ -884,9 +922,65 @@ function App() {
                         <div className="thinking-indicator" role="status" aria-live="polite">
                           <span /><span /><span />
                           <p>{ui.processingSteps[processingStatusIndex[message.status] ?? 0]}</p>
+                          <WaitingExperience
+                            labels={ui.stepLabels}
+                            currentStep={processingStatusIndex[message.status] ?? 0}
+                            tips={waitingTips[language] || waitingTips.en}
+                          />
                         </div>
                       ) : message.role === "assistant" ? (
-                        resultSections ? (
+                        viewResults ? (
+                          <>
+                            {viewResults.map((viewResult) => {
+                              return (
+                                <section className="view-result" key={viewResult.view_id}>
+                                  <h3>{viewResult.display_name}</h3>
+                                  {viewResult.summary && (
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewResult.summary}</ReactMarkdown>
+                                  )}
+                                  <div className="results-content" dir="auto">
+                                    {viewResult.cards ? (
+                                      <div className="result-card-grid" role="list">
+                                        {viewResult.cards.map((card, index) => (
+                                          <article className="result-card" key={`${card.label}-${index}`} role="listitem">
+                                            <span className="result-card-icon" aria-hidden="true">{card.icon}</span>
+                                            <div className="result-card-copy">
+                                              <span className="result-card-label">{card.label}</span>
+                                              {card.value && (
+                                                <span className="result-card-value">
+                                                  <strong>{card.value}</strong>
+                                                  {card.valueLabel && <span>{card.valueLabel}</span>}
+                                                </span>
+                                              )}
+                                              {card.details.length > 0 && (
+                                                <span className="result-card-details">
+                                                  {card.details.map((detail) => <span key={detail}>{detail}</span>)}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </article>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewResult.results}</ReactMarkdown>
+                                    )}
+                                  </div>
+                                  {viewResult.source && (
+                                    <details className="source-details">
+                                      <summary>{viewResult.source.display_name}</summary>
+                                      <dl>
+                                        <dt>Dataset</dt><dd>{viewResult.source.dataset}</dd>
+                                        <dt>{viewResult.source.object_type || "View"}</dt>
+                                        <dd>{viewResult.source.object_name || viewResult.source.view}</dd>
+                                      </dl>
+                                      <pre dir="ltr"><code>{viewResult.source.sql}</code></pre>
+                                    </details>
+                                  )}
+                                </section>
+                              );
+                            })}
+                          </>
+                        ) : resultSections ? (
                           <>
                             {resultSections.summary && (
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -944,7 +1038,7 @@ function App() {
                           <strong>{ui.downloadExcel}</strong>
                         </a>
                       )}
-                      {message.role === "assistant" && (message.sources?.length || message.source) && (
+                      {message.role === "assistant" && !message.viewResults?.length && (message.sources?.length || message.source) && (
                         (message.sources || [message.source]).map((source) => (
                           <details className="source-details" key={`${source.dataset}.${source.object_name || source.view}`}>
                             <summary>{source.display_name}</summary>

@@ -28,11 +28,12 @@ class GenerateSqlTests(unittest.TestCase):
         self.assertEqual(generate_sql("question"), "SELECT 1")
 
     @patch("schema_metadata.get_filter_values", return_value={})
+    @patch("schema_metadata.get_discovered_source", return_value=None)
     @patch(
         "schema_metadata.get_view_columns",
         return_value=[("idv_classificationrecordid", "STRING", "NULLABLE"), ("contactid", "STRING", "NULLABLE")],
     )
-    def test_nsp_schema_defines_athlete_count_identifier(self, _get_view_columns, _get_filter_values):
+    def test_nsp_schema_defines_athlete_count_identifier(self, _get_view_columns, _get_discovered_source, _get_filter_values):
         schema = get_bigquery_schema("nsp_base_view_01")
 
         self.assertIn("count distinct `idv_classificationrecordid`", schema)
