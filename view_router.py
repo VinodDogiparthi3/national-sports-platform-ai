@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from config import MODEL
 from conversation_context import history_payload
 from bigquery_catalog import sanitize_metadata_text
-from view_catalog import get_queryable_sources, get_source
+from view_catalog import get_queryable_sources, get_source, get_source_capability_limitation
 
 @dataclass(frozen=True)
 class RouteResult:
@@ -23,6 +23,8 @@ def build_routing_prompt(question: str, language: str, columns_by_view: dict, hi
     entries = []
     queryable_sources = get_queryable_sources() if sources is None else sources
     for source in queryable_sources:
+        if get_source_capability_limitation(source.source_id, question, language):
+            continue
         entries.append(
             {
                 "source_id": source.source_id,
@@ -114,7 +116,8 @@ def route_question(question: str, language: str = "en", history=()) -> RouteResu
         get_out_of_scope_clarification,
     )
 
-    sources = tuple(get_queryable_sources())
+    sources = tuple(source for source in get_queryable_sources()
+                    if not get_source_capability_limitation(source.source_id, question, language))
     prompt = build_routing_prompt(question, language, {}, history, sources=sources)
     fallback = get_out_of_scope_clarification(language)
     for attempt in range(2):

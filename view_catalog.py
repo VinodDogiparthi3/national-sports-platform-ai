@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+import re
 import threading
 import time
 
@@ -201,7 +202,7 @@ APPROVED_VIEWS: tuple[ApprovedView, ...] = (
     ApprovedView(_SP, "manual_file_manual_hrsd_v3_1", "Community Sports Statistics View", "Community sports",
                  "Manually maintained community sports statistics (HRSD v3.1 file)."),
     ApprovedView(_SP, "population_estimates_statistics_view_01", "Population Estimates Statistics View",
-                 "Population statistics", "Population estimates by year, age, gender, nationality or region."),
+                 "Population statistics", "Population estimates for 2023 and 2024 by age group, gender and nationality. No region identifiers or region names; regional breakdowns are not supported."),
     ApprovedView(_SP, "sopc_view_01", "Sports Competitions and Athlete Performance View",
                  "Athlete competitions and medals",
                  "Sports competitions and athlete performance: events, results, medals."),
@@ -221,6 +222,17 @@ _BY_VIEW = {v.view.lower(): v for v in APPROVED_VIEWS}
 
 def get_view(view_id: str) -> ApprovedView | None:
     return _BY_VIEW.get((view_id or "").lower())
+
+
+def get_source_capability_limitation(source_id: str, question: str, language: str = "en") -> str | None:
+    if source_id != "population_estimates_statistics_view_01":
+        return None
+    normalized = re.sub(r"[\u064b-\u065f\u0670\u0640]", "", question.casefold())
+    if not re.search(r"\b(?:regions?|regional)\b|مناطق|منطقة", normalized):
+        return None
+    if language == "ar":
+        return "لا يحتوي عرض تقديرات السكان على معرّفات المناطق أو أسمائها، لذلك لا يدعم عدد المناطق أو قائمتها أو التوزيع حسب المنطقة. يدعم السكان حسب الفئة العمرية والجنس والجنسية لعامي 2023 و2024."
+    return "This population view has no region identifiers or region names. Regional breakdowns are not supported, including region counts and lists. It supports population by age group, gender and nationality for 2023 and 2024."
 
 
 def clear_table_cache() -> None:

@@ -233,6 +233,46 @@ class CatalogTests(unittest.TestCase):
 
 
 class RouterParsingTests(unittest.TestCase):
+    def test_population_view_is_not_recommended_for_region_requests(self):
+        for question in ("total no.of regions and list of regions", "Population by region", "عدد المناطق وقائمة المناطق"):
+            with self.subTest(question=question), patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS):
+                prompt = build_routing_prompt(question, "en", {})
+                entries = json.loads(prompt.split("Available sources (JSON):\n", 1)[1].split("\n\nRecent conversation", 1)[0])
+                self.assertNotIn("population_estimates_statistics_view_01", [entry["source_id"] for entry in entries])
+                self.assertIn("nsp_base_view_01", [entry["source_id"] for entry in entries])
+
+    def test_population_view_remains_recommended_for_supported_population_requests(self):
+        for question in ("Population by age group for 2024", "Population by nationality and gender", "عدد السكان حسب الفئة العمرية"):
+            with self.subTest(question=question), patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS):
+                prompt = build_routing_prompt(question, "en", {})
+                self.assertIn('"source_id": "population_estimates_statistics_view_01"', prompt)
+
+    def test_stale_population_region_candidate_is_rejected_and_repaired(self):
+        with (
+            patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS) as catalog,
+            patch("gemini_service.client.models.generate_content", side_effect=[
+                SimpleNamespace(text=json.dumps({"source_id": None, "candidates": [
+                    "population_estimates_statistics_view_01", "nsp_base_view_01",
+                ]})),
+                SimpleNamespace(text=json.dumps({"source_id": "nsp_base_view_01", "candidates": []})),
+            ]) as model,
+        ):
+            route = route_question("total no.of regions and list of regions")
+        self.assertEqual(route.source_id, "nsp_base_view_01")
+        self.assertEqual(model.call_count, 2)
+        catalog.assert_called_once()
+
+    def test_supported_population_question_still_routes_to_authorized_view(self):
+        with (
+            patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=json.dumps({
+                "source_id": "population_estimates_statistics_view_01", "candidates": [],
+            }))) as model,
+        ):
+            route = route_question("Population by age group and nationality for 2024")
+        self.assertEqual(route.source_id, "population_estimates_statistics_view_01")
+        model.assert_called_once()
+
     def test_invalid_duplicate_or_partial_candidates_never_form_selectable_options(self):
         payloads = [
             {"candidates": ["budget_view_01", "budget_control_view_01", "private_source"]},

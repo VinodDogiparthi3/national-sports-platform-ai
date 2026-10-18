@@ -18,6 +18,66 @@ from schema_metadata import get_bigquery_schema
 
 
 class GenerateSqlTests(unittest.TestCase):
+    def test_actual_population_schema_cannot_supply_region_count_or_names(self):
+        from gemini_service import generate_query_plan
+        from sql_guardrails import OutOfScopeQueryError, validate_sql
+        from view_catalog import get_view
+
+        source_id = "population_estimates_statistics_view_01"
+        question = "total no.of regions and list of regions"
+        fields = [("max_year", "INTEGER", "NULLABLE"), ("age_group", "STRING", "NULLABLE")]
+        for year in (2024, 2023):
+            fields.extend((f"{nationality}_{year}_{gender}", "STRING", "NULLABLE")
+                          for nationality in ("saudi", "non_saudi") for gender in ("female", "male", "total"))
+            fields.extend((f"total_{year}_{metric}", "STRING", "NULLABLE")
+                          for metric in ("female", "male", "final_total"))
+        self.assertEqual(len(fields), 20)
+        self.assertFalse(any("region" in name.casefold() for name, _, _ in fields))
+        context = {"pending": {"kind": "views", "question": question, "options": [
+            {"view_id": source_id}, {"view_id": "nsp_base_view_01"},
+        ]}, "last_question": question, "view_ids": [source_id, "nsp_base_view_01"]}
+        with (
+            patch("schema_metadata.get_view_columns", return_value=fields),
+            patch("schema_metadata.get_discovered_source", return_value=None),
+            patch("schema_metadata.get_filter_values", return_value={}),
+            patch("sql_guardrails.get_view_columns", return_value=fields),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(
+                text=f"CLARIFICATION: {OUT_OF_SCOPE_CLARIFICATION}",
+            )) as model,
+            patch("view_router.route_question") as route,
+            patch("bigquery_database.client.query") as query,
+        ):
+            plan = generate_query_plan("all", conversation_context=context)
+            self.assertIn("Regional breakdowns are not supported", plan.clarification)
+            self.assertNotIn("nationality or region", get_view(source_id).description)
+            self.assertIn("regional breakdowns are not supported", get_view(source_id).description)
+            self.assertEqual(plan.clarification_source_position, 1)
+            self.assertIn("Population Estimates Statistics View", plan.clarification)
+            self.assertEqual(plan.conversation_context, context)
+            self.assertEqual(plan.queries, ())
+            with self.assertRaises(OutOfScopeQueryError):
+                validate_sql(f"SELECT DISTINCT `region` FROM `{get_view(source_id).full_id}`")
+            with self.assertRaises(OutOfScopeQueryError):
+                validate_sql(f"SELECT COUNT(DISTINCT `region_name`) AS `total_regions` FROM `{get_view(source_id).full_id}`")
+            model.assert_not_called()
+            model.return_value = SimpleNamespace(text=(
+                f"SELECT COUNT(DISTINCT `age_group`) AS `total_age_groups`, "
+                f"ARRAY_AGG(DISTINCT `age_group` IGNORE NULLS) AS `age_groups` "
+                f"FROM `{get_view(source_id).full_id}` WHERE `age_group` <> 'Total'"
+            ))
+            compatible = generate_sql("total number of age groups and list of age groups", "en", source_id)
+            prompt = model.call_args.kwargs["contents"]
+            self.assertIn(get_view(source_id).full_id, prompt)
+            for name, data_type, mode in fields:
+                self.assertIn(f"{name} {data_type} {mode}", prompt)
+            self.assertIn("Do not invent columns", prompt)
+            validated = validate_sql(compatible)
+            self.assertIn("COUNT(DISTINCT", validated)
+            self.assertIn("ARRAY_AGG", validated)
+            model.assert_called_once()
+        route.assert_not_called()
+        query.assert_not_called()
+
     @patch("gemini_service.get_bigquery_schema", return_value="schema")
     @patch("gemini_service.client.models.generate_content")
     def test_removes_sql_code_fence(self, generate_content, _get_bigquery_schema):

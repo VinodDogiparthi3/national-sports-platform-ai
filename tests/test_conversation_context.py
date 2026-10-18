@@ -155,10 +155,65 @@ class FollowUpIntentTests(unittest.TestCase):
 
 
 class QueryPlanContextTests(unittest.TestCase):
-    def test_structured_gemini_candidates_round_trip_provide_for_all_without_rerouting(self):
+    def test_unsupported_source_year_keeps_atomic_plan_and_original_selection(self):
+        from view_catalog import get_view
+
+        question = "Show participation by region for 2024"
+        source_ids = ["nsp_base_view_01", "vw_health_determinants_statistics_publication", "population_estimates_statistics_view_01"]
+        context = {"pending": {"kind": "views", "question": question,
+                               "options": [{"view_id": source_id} for source_id in source_ids]},
+                   "last_question": question, "view_ids": source_ids}
+        for language in ("en", "ar"):
+            with (
+                self.subTest(language=language),
+                patch("view_router.route_question") as route,
+                patch("gemini_service.generate_sql", return_value="SELECT 1") as generate,
+            ):
+                plan = generate_query_plan("all", language, conversation_context=context)
+            route.assert_not_called()
+            generate.assert_called_once_with(question, language, source_ids[0], ())
+            self.assertEqual(plan.queries, ())
+            self.assertEqual(plan.conversation_context, context)
+            self.assertEqual(plan.clarification_source_position, 2)
+            self.assertIn(get_view(source_ids[1]).display_name, plan.clarification)
+            self.assertIn("2023", plan.clarification)
+
+    def test_one_source_clarification_discards_other_prepared_sql_and_stops_planning(self):
         from view_catalog import ApprovedTable, get_view
 
         question = "total no.of regions and list of regions"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "population_estimates_statistics_view_01", "nsp_base_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "Regions", "CRM regions")
+        context = {"pending": {"kind": "views", "question": question,
+                               "options": [{"view_id": source_id} for source_id in source_ids]},
+                   "last_question": question, "view_ids": list(source_ids)}
+        clarification = "Please clarify the region definition."
+        for reply in ("all", "provide for all"):
+            for blocked_index in range(len(source_ids)):
+                answers = ["SELECT 1", "SELECT 2", "SELECT 3"]
+                answers[blocked_index] = f"CLARIFICATION: {clarification}"
+                with (
+                    self.subTest(reply=reply, blocked_index=blocked_index),
+                    patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                    patch("view_router.route_question") as route,
+                    patch("gemini_service.generate_sql", side_effect=answers) as generate,
+                ):
+                    plan = generate_query_plan(reply, conversation_context=context)
+                route.assert_not_called()
+                self.assertEqual(generate.call_count, blocked_index + 1)
+                self.assertEqual([call.args[2] for call in generate.call_args_list], list(source_ids[:blocked_index + 1]))
+                self.assertEqual([call.args[0] for call in generate.call_args_list], [question] * (blocked_index + 1))
+                self.assertEqual(plan.queries, ())
+                source = crm if blocked_index == 0 else get_view(source_ids[blocked_index])
+                self.assertIn(source.display_name, plan.clarification)
+                self.assertIn(clarification, plan.clarification)
+                self.assertEqual(plan.clarification_source_position, blocked_index + 1)
+                self.assertEqual(plan.conversation_context, context)
+
+    def test_structured_gemini_candidates_round_trip_provide_for_all_without_rerouting(self):
+        from view_catalog import ApprovedTable, get_view
+
+        question = "Compare reporting totals across the selected sources"
         source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
         crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
         with (
@@ -197,7 +252,7 @@ class QueryPlanContextTests(unittest.TestCase):
                 ]) as generate,
                 patch("gemini_service.generate_sql") as sql,
             ):
-                plan = generate_query_plan("total no.of regions and list of regions")
+                plan = generate_query_plan("Compare reporting totals across the selected sources")
                 self.assertIsNotNone(plan.conversation_context, "Clarification must have structured options before display")
                 self.assertEqual([option["view_id"] for option in plan.conversation_context["pending"]["options"]], list(source_ids))
                 self.assertEqual(generate.call_count, 2, "Only one bounded routing repair is permitted")

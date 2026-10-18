@@ -377,10 +377,10 @@ def _context_dict(context):
     return context.model_dump() if hasattr(context, "model_dump") else context
 
 
-def _log_query_stage(request_id: str, stage: str, *, context=None, selection=None, query_count: int = 0, reason: str | None = None):
+def _log_query_stage(request_id: str, stage: str, *, context=None, selection=None, query_count: int = 0, reason: str | None = None, source_position: int | None = None):
     data = _context_dict(context) or {}
     pending = data.get("pending") or {}
-    logging.getLogger("uvicorn.error").info(json.dumps({
+    record = {
         "event": "query_stage",
         "request_id": request_id,
         "stage": stage,
@@ -390,7 +390,10 @@ def _log_query_stage(request_id: str, stage: str, *, context=None, selection=Non
         "selected_source_count": len(selection.get("view_ids") or []) if selection else 0,
         "query_count": query_count,
         "reason": reason,
-    }))
+    }
+    if source_position is not None:
+        record.update(source_position=source_position, source_status="needs_clarification")
+    logging.getLogger("uvicorn.error").info(json.dumps(record))
 
 
 def _source_records(queries):
@@ -716,7 +719,9 @@ def ask(request: QuestionRequest):
         )
 
         if plan.clarification:
-            _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context)
+            _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context,
+                             source_position=plan.clarification_source_position,
+                             reason="source_planning_clarification" if plan.clarification_source_position else None)
             return {
                 "question": request.question,
                 "answer": plan.clarification,
@@ -852,7 +857,9 @@ def ask_stream(request: QuestionRequest):
             )
 
             if plan.clarification:
-                _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context)
+                _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context,
+                                 source_position=plan.clarification_source_position,
+                                 reason="source_planning_clarification" if plan.clarification_source_position else None)
                 if plan.conversation_context:
                     yield _sse_event("context", {"conversation_context": plan.conversation_context})
                 yield _sse_event(

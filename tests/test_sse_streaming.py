@@ -34,6 +34,99 @@ class StreamingAskTests(unittest.TestCase):
     def plan(self, sql):
         return QueryPlan(queries=(("nsp_base_view_01", sql),))
 
+    def test_legacy_population_region_selection_reports_limitation_without_model_or_execution(self):
+        question = "total no.of regions and list of regions"
+        source_ids = ["population_estimates_statistics_view_01", "nsp_base_view_01"]
+        context = {"pending": {"kind": "views", "question": question,
+                               "options": [{"view_id": source_id} for source_id in source_ids]},
+                   "last_question": question, "view_ids": source_ids}
+        for endpoint, language in (("/ask", "en"), ("/ask/stream", "en"), ("/ask", "ar"), ("/ask/stream", "ar")):
+            with (
+                self.subTest(endpoint=endpoint, language=language),
+                patch("view_router.route_question") as route,
+                patch("gemini_service.client.models.generate_content") as model,
+                patch("gemini_service.get_bigquery_schema") as schema,
+                patch("app.is_metadata_question") as classify,
+                patch("app.execute_sql_batch") as execute,
+            ):
+                response = self.client.post(endpoint, json={"question": "all", "language": language, "conversation_context": context})
+            self.assertEqual(response.status_code, 200)
+            route.assert_not_called()
+            model.assert_not_called()
+            schema.assert_not_called()
+            classify.assert_not_called()
+            execute.assert_not_called()
+            if endpoint == "/ask":
+                message = response.json()["answer"]
+                retained = response.json()["conversation_context"]
+            else:
+                events = parse_events(response.text)
+                message = "".join(payload["text"] for event, payload in events if event == "token")
+                retained = next(payload["conversation_context"] for event, payload in events if event == "context")
+                self.assertEqual(events[-1][0], "done")
+            self.assertIn("Population Estimates Statistics View", message)
+            self.assertIn("Regional breakdowns are not supported" if language == "en" else "لا يدعم عدد المناطق", message)
+            self.assertEqual(retained, app.ConversationContext(**context).model_dump())
+
+    def test_one_source_clarification_blocks_entire_batch_before_validation_in_both_apis(self):
+        question = "total no.of regions and list of regions"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "population_estimates_statistics_view_01", "nsp_base_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "Regions", "CRM regions")
+        context = {"pending": {"kind": "views", "question": question,
+                               "options": [{"view_id": source_id} for source_id in source_ids]},
+                   "last_question": question, "view_ids": list(source_ids)}
+        clarification = "Please clarify the region definition."
+        for endpoint, language in (("/ask", "en"), ("/ask/stream", "en"), ("/ask", "ar"), ("/ask/stream", "ar")):
+            for reply in ("all", "provide for all"):
+                for blocked_index in range(len(source_ids)):
+                    answers = ["SELECT 1", "SELECT 2", "SELECT 3"]
+                    answers[blocked_index] = f"CLARIFICATION: {clarification}"
+                    with (
+                        self.subTest(endpoint=endpoint, language=language, reply=reply, blocked_index=blocked_index),
+                        patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                        patch("view_router.route_question") as route,
+                        patch("gemini_service.generate_sql", side_effect=answers) as generate,
+                        patch("app.is_metadata_question") as classify,
+                        patch("app.validate_sql") as validate,
+                        patch("app.execute_sql_batch") as execute,
+                        self.assertLogs("uvicorn.error", level="INFO") as captured,
+                    ):
+                        response = self.client.post(endpoint, json={"question": reply, "language": language, "conversation_context": context})
+                    self.assertEqual(response.status_code, 200)
+                    route.assert_not_called()
+                    classify.assert_not_called()
+                    validate.assert_not_called()
+                    execute.assert_not_called()
+                    self.assertEqual(generate.call_count, blocked_index + 1)
+                    if endpoint == "/ask":
+                        message = response.json()["answer"]
+                        retained = response.json()["conversation_context"]
+                        self.assertNotIn("sources", response.json())
+                    else:
+                        events = parse_events(response.text)
+                        message = "".join(payload["text"] for event, payload in events if event == "token")
+                        self.assertFalse(any(event in {"source", "view_result", "error"} for event, _ in events))
+                        retained = next(payload["conversation_context"] for event, payload in events if event == "context")
+                        self.assertEqual(events[-1][0], "done")
+                    source = crm if blocked_index == 0 else get_view(source_ids[blocked_index])
+                    self.assertIn(source.display_name, message)
+                    self.assertIn(clarification, message)
+                    self.assertIn("يلزم توضيح" if language == "ar" else "Clarification needed", message)
+                    self.assertEqual(retained, app.ConversationContext(**context).model_dump())
+                    stages = [json.loads(record.getMessage()) for record in captured.records]
+                    self.assertEqual([entry["stage"] for entry in stages], [
+                        "received", "selection_checked", "planning_started", "clarification_sent",
+                    ])
+                    self.assertTrue(stages[1]["selection_resolved"])
+                    self.assertEqual(stages[1]["selected_source_count"], 3)
+                    self.assertEqual(stages[-1]["pending_option_count"], 3)
+                    self.assertEqual(stages[-1]["source_position"], blocked_index + 1)
+                    self.assertEqual(stages[-1]["source_status"], "needs_clarification")
+                    self.assertEqual(stages[-1]["reason"], "source_planning_clarification")
+                    logged = "\n".join(captured.output)
+                    for private_value in (question, clarification, source.display_name, *source_ids):
+                        self.assertNotIn(private_value, logged)
+
     def test_validation_rejection_preserves_context_and_logs_only_safe_metadata(self):
         private_question = "PRIVATE_QUESTION_MARKER"
         private_sql = "SELECT PRIVATE_SQL_MARKER FROM secret_source"
@@ -87,7 +180,7 @@ class StreamingAskTests(unittest.TestCase):
                 for private_value in (private_question, private_sql, private_error, "nsp_base_view_01"):
                     self.assertNotIn(private_value, logged)
 
-    def test_exact_cloud_region_clarification_keeps_context_even_when_sql_is_rejected(self):
+    def test_legacy_cloud_region_clarification_keeps_context_even_when_sql_is_rejected(self):
         question = "total no.of regions and list of regions"
         cloud_text = "Which source should I use?\n(ntw_regionBase; Population Estimates Statistics View;\nNSP Base View)"
         source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "population_estimates_statistics_view_01", "nsp_base_view_01")
@@ -97,11 +190,10 @@ class StreamingAskTests(unittest.TestCase):
             for reject_sql in (False, True):
                 with (
                     self.subTest(reply=reply, reject_sql=reject_sql),
-                    patch("view_router.get_queryable_sources", return_value=sources),
                     patch("view_catalog.get_authorized_tables", return_value=(crm,)),
-                    patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=json.dumps({
-                        "source_id": None, "candidates": list(source_ids), "clarification": cloud_text,
-                    }))) as model,
+                    patch("view_router.route_question", return_value=RouteResult(
+                        candidate_view_ids=source_ids, clarification=cloud_text,
+                    )) as route,
                     patch("gemini_service.generate_sql", side_effect=lambda original, language, source_id, history:
                           f"SELECT `{'region' if reject_sql or source_id != crm.source_id else 'ntw_name'}` FROM `{next(source for source in sources if source.source_id == source_id).full_id}`") as sql,
                     patch("sql_guardrails.get_view_columns", side_effect=lambda source_id:
@@ -122,7 +214,7 @@ class StreamingAskTests(unittest.TestCase):
                     self.assertEqual(app.resolve_pending_selection(request.question, request.conversation_context)["view_ids"], list(source_ids))
                     response = self.client.post("/ask/stream", json=request.model_dump())
                     events = parse_events(response.text)
-                    model.assert_called_once()
+                    route.assert_called_once()
                     classify.assert_called_once()
                     self.assertEqual([call.args[0] for call in sql.call_args_list], [question] * 3)
                     self.assertEqual(events[-1][0], "done")
@@ -137,7 +229,7 @@ class StreamingAskTests(unittest.TestCase):
                         self.assertEqual([payload["view_id"] for event, payload in events if event == "view_result"], list(source_ids))
 
     def test_missing_gemini_candidates_are_repaired_for_json_and_sse_follow_ups(self):
-        question = "total no.of regions and list of regions"
+        question = "Compare reporting totals across the selected sources"
         source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
         crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
         sources = (crm, get_view(source_ids[1]), get_view(source_ids[2]))

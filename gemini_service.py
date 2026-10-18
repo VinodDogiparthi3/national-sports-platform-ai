@@ -6,10 +6,11 @@ from google import genai
 import sqlglot
 from sqlglot import exp
 
+from bigquery_catalog import sanitize_metadata_text
 from config import PROJECT_ID, LOCATION, MODEL, BIGQUERY_TABLE_ID
 from conversation_context import history_payload, resolve_pending_selection
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
-from view_catalog import get_source
+from view_catalog import get_source, get_source_capability_limitation
 
 
 client = genai.Client(
@@ -163,6 +164,28 @@ class QueryPlan:
     queries: tuple[tuple[str, str], ...] = ()
     clarification: str | None = None
     conversation_context: dict | None = None
+    clarification_source_position: int | None = None
+
+
+def _source_clarification_plan(clarification, *, view_id, question, view_ids, position, language, context=None):
+    source = get_source(view_id)
+    label = sanitize_metadata_text(source.display_name) if source else ""
+    if language == "ar":
+        prefix = f"يلزم توضيح للمصدر «{label}»" if label else "يلزم توضيح للمصدر المحدد"
+    else:
+        prefix = f"Clarification needed for {label}" if label else "Clarification needed for the selected source"
+    retained_context = (
+        context.model_dump() if hasattr(context, "model_dump") else context
+    ) if context is not None else {
+        "pending": {"kind": "views", "question": question,
+                    "options": [{"view_id": source_id} for source_id in view_ids]},
+        "last_question": question,
+        "view_ids": list(view_ids),
+    }
+    return QueryPlan(
+        clarification=f"{prefix}: {clarification}", conversation_context=retained_context,
+        clarification_source_position=position,
+    )
 
 
 def _year_options(view_ids: tuple[str, ...]) -> list[dict]:
@@ -218,7 +241,7 @@ def generate_query_plan(
 
     questions_by_view = resolved.get("questions_by_view", {}) if resolved else {}
     queries = []
-    for view_id in view_ids:
+    for source_position, view_id in enumerate(view_ids, start=1):
         source_question = questions_by_view.get(view_id, resolved_question)
         requested_year = re.search(r"\b(?:19|20)\d{2}\b", source_question)
         source = get_source(view_id) if requested_year else None
@@ -230,19 +253,18 @@ def generate_query_plan(
                 if language == "ar"
                 else f"This source currently has data for {year_text} only."
             )
-            return QueryPlan(clarification=clarification)
+            return _source_clarification_plan(
+                clarification, view_id=view_id, question=resolved_question, view_ids=view_ids,
+                position=source_position, language=language, context=conversation_context if resolved else None,
+            )
 
         sql = generate_sql(source_question, language, view_id, history)
         if sql.upper().startswith("CLARIFICATION:"):
-            context = (
-                conversation_context.model_dump() if hasattr(conversation_context, "model_dump") else conversation_context
-            ) if resolved else {
-                "pending": {"kind": "views", "question": resolved_question,
-                            "options": [{"view_id": source_id} for source_id in view_ids]},
-                "last_question": resolved_question,
-                "view_ids": list(view_ids),
-            }
-            return QueryPlan(clarification=sql[len("CLARIFICATION:"):].strip(), conversation_context=context)
+            return _source_clarification_plan(
+                sql[len("CLARIFICATION:"):].strip(), view_id=view_id, question=resolved_question,
+                view_ids=view_ids, position=source_position, language=language,
+                context=conversation_context if resolved else None,
+            )
         queries.append((view_id, sql))
 
     context = {"pending": None, "last_question": resolved_question, "view_ids": list(view_ids)}
@@ -260,6 +282,9 @@ def generate_routed_sql(question: str, language: str = "en", history=()) -> str:
 
 
 def generate_sql(question: str, language: str = "en", view_id: str | None = None, history=()) -> str:
+    limitation = get_source_capability_limitation(view_id or BIGQUERY_TABLE_ID, question, language)
+    if limitation:
+        return f"CLARIFICATION: {limitation}"
     schema = get_bigquery_schema(view_id) if view_id else get_bigquery_schema()
     response_language = "Arabic" if language == "ar" else "English"
     clarification = get_out_of_scope_clarification(language)
