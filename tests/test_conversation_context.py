@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -154,6 +155,71 @@ class FollowUpIntentTests(unittest.TestCase):
 
 
 class QueryPlanContextTests(unittest.TestCase):
+    def test_structured_gemini_candidates_round_trip_provide_for_all_without_rerouting(self):
+        from view_catalog import ApprovedTable, get_view
+
+        question = "total no.of regions and list of regions"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
+        with (
+            patch("view_router.get_queryable_sources", return_value=(crm, get_view(source_ids[1]), get_view(source_ids[2]))),
+            patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+            patch("view_catalog.get_dynamic_authorized_sources", return_value=()),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=json.dumps({
+                "source_id": None, "candidates": list(source_ids),
+                "clarification": "Choose CRM, NSP or population regions.",
+            }))) as generate,
+            patch("gemini_service.generate_sql", side_effect=["SELECT 1", "SELECT 2", "SELECT 3"]) as sql,
+        ):
+            initial = generate_query_plan(question)
+            self.assertEqual([option["view_id"] for option in initial.conversation_context["pending"]["options"]], list(source_ids))
+            follow_up = generate_query_plan("provide for all", conversation_context=initial.conversation_context)
+        generate.assert_called_once()
+        self.assertEqual([source_id for source_id, _ in follow_up.queries], list(source_ids))
+        self.assertEqual([call.args[0] for call in sql.call_args_list], [question] * 3)
+
+    def test_gemini_numbered_clarification_without_candidates_is_repaired_before_display(self):
+        from view_catalog import ApprovedTable, get_view
+
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
+        clarification = "Choose: 1. CRM regions 2. NSP registrations 3. Population statistics"
+        repaired = {"source_id": None, "candidates": list(source_ids), "clarification": clarification}
+        for candidate_fields in ({}, {"candidates": []}, {"candidates": None}, {"candidates": ["CRM regions", "unknown-source"]}):
+            with (
+                self.subTest(candidate_fields=candidate_fields),
+                patch("view_router.get_queryable_sources", return_value=(crm, get_view(source_ids[1]), get_view(source_ids[2]))),
+                patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                patch("view_catalog.get_dynamic_authorized_sources", return_value=()),
+                patch("gemini_service.client.models.generate_content", side_effect=[
+                    SimpleNamespace(text=json.dumps({"source_id": None, "clarification": clarification, **candidate_fields})),
+                    SimpleNamespace(text=json.dumps(repaired)),
+                ]) as generate,
+                patch("gemini_service.generate_sql") as sql,
+            ):
+                plan = generate_query_plan("total no.of regions and list of regions")
+                self.assertIsNotNone(plan.conversation_context, "Clarification must have structured options before display")
+                self.assertEqual([option["view_id"] for option in plan.conversation_context["pending"]["options"]], list(source_ids))
+                self.assertEqual(generate.call_count, 2, "Only one bounded routing repair is permitted")
+                sql.assert_not_called()
+
+    def test_unrepairable_gemini_clarification_does_not_offer_unselectable_choices(self):
+        clarification = "Choose: 1. CRM regions 2. NSP registrations 3. Population statistics"
+        malformed = SimpleNamespace(text=json.dumps({"source_id": None, "clarification": clarification}))
+        with (
+            patch("view_router.get_queryable_sources", return_value=()),
+            patch("view_catalog.get_authorized_tables", return_value=()),
+            patch("view_catalog.get_dynamic_authorized_sources", return_value=()),
+            patch("gemini_service.client.models.generate_content", return_value=malformed) as generate,
+            patch("gemini_service.generate_sql") as sql,
+        ):
+            plan = generate_query_plan("total no.of regions and list of regions")
+        self.assertNotIn("1. CRM regions", plan.clarification)
+        self.assertIsNone(plan.conversation_context)
+        self.assertEqual(plan.queries, ())
+        self.assertLessEqual(generate.call_count, 2)
+        sql.assert_not_called()
+
     def test_sql_clarification_retains_pending_selection_for_next_reply(self):
         context = {"pending": {"kind": "views", "question": "total no.of regions and list of regions", "options": [
             {"view_id": "nsp_base_view_01"}, {"view_id": "population_estimates_statistics_view_01"},

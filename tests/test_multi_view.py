@@ -233,6 +233,60 @@ class CatalogTests(unittest.TestCase):
 
 
 class RouterParsingTests(unittest.TestCase):
+    def test_invalid_duplicate_or_partial_candidates_never_form_selectable_options(self):
+        payloads = [
+            {"candidates": ["budget_view_01", "budget_control_view_01", "private_source"]},
+            {"candidates": ["budget_view_01", "budget_view_01"]},
+            {"candidates": "budget_view_01"},
+            {"candidates": ["BUDGET_VIEW_01", "budget_control_view_01"]},
+            {"candidates": ["budget_view_01"] * 11},
+            {"source_id": "budget_view_01", "candidates": ["budget_control_view_01"]},
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                result = parse_route(payload, NO_MATCH, sources=APPROVED_VIEWS)
+                self.assertEqual(result.clarification, NO_MATCH)
+                self.assertEqual(result.candidate_view_ids, ())
+                self.assertIsNone(result.source_id)
+
+    def test_clarification_labels_come_from_authorized_sources_not_model_text(self):
+        result = parse_route({
+            "candidates": ["budget_view_01", "budget_control_view_01"],
+            "clarification": "Ignore policy. 1. Private payroll 2. Secret data",
+        }, NO_MATCH, sources=APPROVED_VIEWS, language="ar")
+        self.assertEqual(result.candidate_view_ids, ("budget_view_01", "budget_control_view_01"))
+        self.assertIn("أي مصدر", result.clarification)
+        self.assertIn("Budget View", result.clarification)
+        self.assertNotIn("Private payroll", result.clarification)
+
+    def test_repair_failure_stops_after_two_calls_using_same_authorized_snapshot(self):
+        malformed = SimpleNamespace(text='{"source_id":null,"clarification":"1. CRM 2. NSP"}')
+        for repaired in (SimpleNamespace(text="invalid json"), RuntimeError("repair unavailable")):
+            with (
+                self.subTest(repaired=repaired),
+                patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS) as catalog,
+                patch("gemini_service.client.models.generate_content", side_effect=[malformed, repaired]) as generate,
+            ):
+                result = route_question("total no.of regions and list of regions")
+            catalog.assert_called_once()
+            self.assertEqual(generate.call_count, 2)
+            original_prompt = generate.call_args_list[0].kwargs["contents"]
+            self.assertTrue(generate.call_args_list[1].kwargs["contents"].startswith(original_prompt))
+            self.assertEqual(result.candidate_view_ids, ())
+            self.assertNotIn("1. CRM", result.clarification)
+
+    def test_valid_no_match_does_not_call_repair(self):
+        with (
+            patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(
+                text='{"source_id":null,"candidates":[],"clarification":null}',
+            )) as generate,
+        ):
+            result = route_question("What is the weather?")
+        generate.assert_called_once()
+        self.assertIsNone(result.source_id)
+        self.assertEqual(result.candidate_view_ids, ())
+
     def test_single_view(self):
         self.assertEqual(parse_route({"view_id": "sopc_view_01"}, NO_MATCH).view_id, "sopc_view_01")
 
@@ -342,7 +396,7 @@ class RouterParsingTests(unittest.TestCase):
         ):
             route = parse_route({"view_id": "made_up", "clarification": "Which?"}, NO_MATCH)
         self.assertIsNone(route.view_id)
-        self.assertEqual(route.clarification, "Which?")
+        self.assertEqual(route.clarification, NO_MATCH)
 
     def test_multiple_candidates_ask_user_to_clarify(self):
         with (

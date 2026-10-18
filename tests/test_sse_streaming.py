@@ -34,6 +34,49 @@ class StreamingAskTests(unittest.TestCase):
     def plan(self, sql):
         return QueryPlan(queries=(("nsp_base_view_01", sql),))
 
+    def test_missing_gemini_candidates_are_repaired_for_json_and_sse_follow_ups(self):
+        question = "total no.of regions and list of regions"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
+        sources = (crm, get_view(source_ids[1]), get_view(source_ids[2]))
+        sql_by_source = {source.source_id: f"SELECT `region` FROM `{source.full_id}`" for source in sources}
+        for endpoint in ("/ask", "/ask/stream"):
+            for reply, selected in (("all", source_ids), ("both", source_ids), ("provide for all", source_ids),
+                                    ("1st", source_ids[:1]), ("2nd", source_ids[1:2]), ("3rd", source_ids[2:])):
+                with (
+                    self.subTest(endpoint=endpoint, reply=reply),
+                    patch("view_router.get_queryable_sources", return_value=sources),
+                    patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                    patch("gemini_service.client.models.generate_content", side_effect=[
+                        SimpleNamespace(text=json.dumps({"clarification": "1. CRM 2. NSP 3. Population"})),
+                        SimpleNamespace(text=json.dumps({"source_id": None, "candidates": list(source_ids)})),
+                    ]) as model,
+                    patch("gemini_service.generate_sql", side_effect=lambda original, language, source_id, history: sql_by_source[source_id]) as generate_sql,
+                    patch("sql_guardrails.get_view_columns", return_value=[("region", "STRING", "NULLABLE")]),
+                    patch("app.execute_sql_batch", side_effect=lambda queries: [(["region"], [("Mock region",)]) for _ in queries]) as execute,
+                    patch("app.generate_answer_stream", side_effect=lambda *args: iter(["Mock region"])),
+                    patch("app.generate_answer", return_value="Mock region"),
+                ):
+                    initial = self.client.post(endpoint, json={"question": question})
+                    self.assertEqual(initial.status_code, 200)
+                    context = initial.json()["conversation_context"] if endpoint == "/ask" else next(
+                        payload["conversation_context"] for event, payload in parse_events(initial.text) if event == "context"
+                    )
+                    self.assertEqual(context["pending"]["question"], question)
+                    self.assertEqual([option["view_id"] for option in context["pending"]["options"]], list(source_ids))
+                    execute.assert_not_called()
+                    response = self.client.post(endpoint, json={"question": reply, "conversation_context": context})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(model.call_count, 2)
+                    self.assertEqual([call.args[0] for call in generate_sql.call_args_list], [question] * len(selected))
+                    execute.assert_called_once_with([sql_by_source[source_id] + " LIMIT 100" for source_id in selected])
+                    if endpoint == "/ask":
+                        self.assertEqual(response.json()["conversation_context"]["view_ids"], list(selected))
+                    else:
+                        events = parse_events(response.text)
+                        self.assertEqual([payload["view_id"] for event, payload in events if event == "view_result"], list(selected))
+                        self.assertEqual(events[-1][0], "done")
+
     def test_regions_clarification_then_all_reuses_three_sources_before_classification(self):
         question = "total no.of regions and list of regions"
         source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")

@@ -17,11 +17,11 @@ class RouteResult:
         return self.source_id
 
 
-def build_routing_prompt(question: str, language: str, columns_by_view: dict, history=()) -> str:
+def build_routing_prompt(question: str, language: str, columns_by_view: dict, history=(), *, sources=None) -> str:
     from schema_metadata import get_cached_source_columns
 
     entries = []
-    queryable_sources = get_queryable_sources()
+    queryable_sources = get_queryable_sources() if sources is None else sources
     for source in queryable_sources:
         entries.append(
             {
@@ -68,32 +68,42 @@ Question: {json.dumps(question, ensure_ascii=False)}
 """
 
 
-def parse_route(payload, no_match_message: str) -> RouteResult:
+def parse_route(payload, no_match_message: str, *, sources=None, language: str = "en") -> RouteResult:
     if not isinstance(payload, dict):
         return RouteResult(clarification=no_match_message)
 
-    source_id = payload.get("source_id") or payload.get("view_id")
-    source = get_source(source_id or "")
-    if source:
-        return RouteResult(source_id=source.source_id)
+    by_id = {source.source_id: source for source in sources} if sources is not None else None
 
-    candidates = [
-        source
-        for source in (get_source(candidate) for candidate in (payload.get("candidates") or []) if isinstance(candidate, str))
-        if source
-    ]
+    def resolve(source_id):
+        if not isinstance(source_id, str) or not source_id:
+            return None
+        source = by_id.get(source_id) if by_id is not None else get_source(source_id)
+        return source if source and source.source_id == source_id else None
+
+    source_id = payload.get("source_id") or payload.get("view_id")
+    candidate_ids = payload.get("candidates", [])
+    if not isinstance(candidate_ids, list) or len(candidate_ids) > 10:
+        return RouteResult(clarification=no_match_message)
+    if source_id:
+        source = resolve(source_id)
+        if source and not candidate_ids:
+            return RouteResult(source_id=source.source_id)
+        return RouteResult(clarification=no_match_message)
+
+    candidates = []
+    for candidate_id in candidate_ids:
+        source = resolve(candidate_id)
+        if source is None or source in candidates:
+            return RouteResult(clarification=no_match_message)
+        candidates.append(source)
     if len(candidates) > 1:
-        options = "; ".join(source.display_name for source in candidates)
-        question = payload.get("clarification")
-        base = question if isinstance(question, str) and question.strip() else ""
+        options = "; ".join(sanitize_metadata_text(source.display_name) for source in candidates)
+        base = "أي مصدر تريد استخدامه؟" if language == "ar" else "Which source should I use?"
         return RouteResult(
-            clarification=f"{base} ({options})".strip(),
+            clarification=f"{base} ({options})",
             candidate_view_ids=tuple(source.source_id for source in candidates),
         )
 
-    clarification = payload.get("clarification")
-    if isinstance(clarification, str) and clarification.strip():
-        return RouteResult(clarification=clarification.strip())
     return RouteResult(clarification=no_match_message)
 
 
@@ -104,10 +114,36 @@ def route_question(question: str, language: str = "en", history=()) -> RouteResu
         get_out_of_scope_clarification,
     )
 
-    prompt = build_routing_prompt(question, language, {}, history)
-    response = client.models.generate_content(model=MODEL, contents=prompt)
-    try:
-        payload = _parse_json_response(response.text)
-    except ValueError:
-        payload = None
-    return parse_route(payload, get_out_of_scope_clarification(language))
+    sources = tuple(get_queryable_sources())
+    prompt = build_routing_prompt(question, language, {}, history, sources=sources)
+    fallback = get_out_of_scope_clarification(language)
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(model=MODEL, contents=prompt)
+        except Exception:
+            if attempt == 0:
+                raise
+            return RouteResult(clarification=fallback)
+        try:
+            payload = _parse_json_response(response.text) if isinstance(response.text, str) else None
+        except ValueError:
+            payload = None
+        route = parse_route(payload, fallback, sources=sources, language=language)
+        if route.source_id or route.candidate_view_ids:
+            return route
+        if (
+            isinstance(payload, dict)
+            and payload.get("source_id") is None
+            and payload.get("view_id") is None
+            and payload.get("candidates") == []
+            and not payload.get("clarification")
+        ):
+            return RouteResult(clarification=fallback)
+        if attempt == 0:
+            prompt += """
+Repair the routing response once, using the same original Question and authorized source list above.
+Return only the specified JSON object. Use exact canonical source_id values from that list.
+For source-choice clarification, set source_id to null and provide 2 to 10 distinct authorized IDs in candidates.
+Do not infer IDs from clarification text or invent sources. If none fit, return source_id null, candidates [] and clarification null.
+"""
+    return RouteResult(clarification=fallback)
