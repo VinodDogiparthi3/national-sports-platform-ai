@@ -14,6 +14,25 @@ from view_router import RouteResult
 
 
 class PendingSelectionTests(unittest.TestCase):
+    def test_three_region_source_clarification_accepts_requested_selection_phrases(self):
+        sources = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
+        context = {"pending": {"kind": "views", "question": "total no.of regions and list of regions",
+                               "options": [{"view_id": source_id} for source_id in sources]}}
+        selections = {
+            "all": sources, "both": sources, "provide for all": sources,
+            "first": sources[:1], "second": sources[1:2], "third": sources[2:],
+            "1st": sources[:1], "2nd": sources[1:2], "3rd": sources[2:],
+            "first and second": sources[:2], "1st and 2nd": sources[:2],
+            "الكل": sources, "الثالث": sources[2:], "الأول والثاني": sources[:2],
+        }
+        with patch("conversation_context.get_source", side_effect=lambda source_id: SimpleNamespace(source_id=source_id)):
+            for reply, expected in selections.items():
+                with self.subTest(reply=reply):
+                    resolved = resolve_pending_selection(reply, context)
+                    self.assertIsNotNone(resolved)
+                    self.assertEqual(resolved["view_ids"], list(expected))
+                    self.assertEqual(resolved["question"], context["pending"]["question"])
+
     def setUp(self):
         self.views = {
             "pending": {
@@ -34,6 +53,8 @@ class PendingSelectionTests(unittest.TestCase):
                 self.assertEqual(result["question"], self.views["pending"]["question"])
 
     def test_first_and_second_select_one_view(self):
+        self.assertEqual(resolve_pending_selection("1st", self.views)["view_ids"], ["nsp_base_view_01"])
+        self.assertEqual(resolve_pending_selection("2nd", self.views)["view_ids"], ["sopc_view_01"])
         self.assertEqual(resolve_pending_selection("first", self.views)["view_ids"], ["nsp_base_view_01"])
         self.assertEqual(resolve_pending_selection("الأول", self.views)["view_ids"], ["nsp_base_view_01"])
         self.assertEqual(resolve_pending_selection("الاول", self.views)["view_ids"], ["nsp_base_view_01"])
@@ -55,6 +76,24 @@ class PendingSelectionTests(unittest.TestCase):
 
         self.assertEqual(result["view_ids"], ["population_estimates_statistics_view_01"])
         self.assertEqual(result["question"], "Show population by age group for 2024")
+
+        both = resolve_pending_selection("both", context)
+        self.assertEqual(both["question"], "Show population by age group")
+        self.assertEqual(both["questions_by_view"], {
+            "vw_health_determinants_statistics_publication": "Show population by age group for 2023",
+            "population_estimates_statistics_view_01": "Show population by age group for 2024",
+        })
+
+    def test_short_follow_up_reuses_completed_authorized_sources(self):
+        context = {"pending": None, "last_question": "Show registrations by sport for 2023",
+                   "view_ids": ["nsp_base_view_01", "sopc_view_01"]}
+        for reply in ("top 5", "compare", "all", "2024", "٢٠٢٤"):
+            with self.subTest(reply=reply):
+                result = resolve_pending_selection(reply, context)
+                self.assertEqual(result["view_ids"], context["view_ids"])
+                if "2024" in result["question"]:
+                    self.assertNotIn("2023", result["question"])
+        self.assertIsNone(resolve_pending_selection("What is the weather?", context))
 
     def test_unapproved_view_id_in_client_context_is_rejected(self):
         context = {
@@ -78,6 +117,8 @@ class FollowUpIntentTests(unittest.TestCase):
         self.assertIsNone(translation_target("translate this question", "en"))
 
     def test_explanation_intent_requires_previous_result_reference(self):
+        for question in ("explain", "why", "why?", "اشرح", "لماذا؟"):
+            self.assertTrue(is_explanation_request(question), question)
         self.assertTrue(is_explanation_request("Explain the previous results"))
         self.assertTrue(is_explanation_request("اشرح النتائج السابقة"))
         self.assertFalse(is_explanation_request("Explain the registration process"))
@@ -113,6 +154,66 @@ class FollowUpIntentTests(unittest.TestCase):
 
 
 class QueryPlanContextTests(unittest.TestCase):
+    def test_sql_clarification_retains_pending_selection_for_next_reply(self):
+        context = {"pending": {"kind": "views", "question": "total no.of regions and list of regions", "options": [
+            {"view_id": "nsp_base_view_01"}, {"view_id": "population_estimates_statistics_view_01"},
+        ]}, "last_question": "total no.of regions and list of regions",
+            "view_ids": ["nsp_base_view_01", "population_estimates_statistics_view_01"]}
+        with (
+            patch("view_router.route_question") as route,
+            patch("gemini_service.generate_sql", return_value="CLARIFICATION: Please confirm the region definition."),
+        ):
+            plan = generate_query_plan("all", conversation_context=context)
+        route.assert_not_called()
+        self.assertEqual(plan.conversation_context, context)
+        self.assertEqual(plan.queries, ())
+
+    def test_both_years_generate_source_specific_questions(self):
+        context = {"pending": {"kind": "years", "question": "Show participation by region", "options": [
+            {"view_id": "cultural_and_entertainment_statistics_2023_cultural_events_region_sports_reg", "year": 2023},
+            {"view_id": "culture_and_entertainment_indicators_2024_administrative_region_2", "year": 2024},
+        ]}}
+        with (
+            patch("view_router.route_question") as route,
+            patch("gemini_service.generate_sql", return_value="SELECT 1") as generate,
+        ):
+            plan = generate_query_plan("both", conversation_context=context)
+        route.assert_not_called()
+        self.assertEqual(len(plan.queries), 2)
+        self.assertEqual([call.args[0] for call in generate.call_args_list], [
+            "Show participation by region for 2023", "Show participation by region for 2024",
+        ])
+
+    def test_dynamic_year_candidates_use_authorized_source_metadata(self):
+        sources = {
+            f"dataset_{year}.metrics_{year}": SimpleNamespace(
+                source_id=f"dataset_{year}.metrics_{year}", display_name="Metrics", description="Reporting metrics",
+            )
+            for year in (2023, 2024)
+        }
+        with (
+            patch("view_router.route_question", return_value=RouteResult(
+                clarification="Which year?", candidate_view_ids=tuple(sources),
+            )),
+            patch("gemini_service.get_source", side_effect=sources.get),
+            patch("gemini_service.generate_sql") as generate,
+        ):
+            plan = generate_query_plan("Show reporting metrics")
+        self.assertEqual(plan.conversation_context["pending"]["kind"], "years")
+        self.assertEqual([option["year"] for option in plan.conversation_context["pending"]["options"]], [2023, 2024])
+        generate.assert_not_called()
+
+    def test_completed_top_five_preserves_sources_and_passes_resolved_question(self):
+        context = {"pending": None, "last_question": "Show registrations by sport", "view_ids": ["nsp_base_view_01"]}
+        with (
+            patch("view_router.route_question") as route,
+            patch("gemini_service.generate_sql", return_value="SELECT 1 LIMIT 5") as generate,
+        ):
+            plan = generate_query_plan("top 5", conversation_context=context)
+        route.assert_not_called()
+        self.assertEqual(generate.call_args.args[0], "Show registrations by sport; top 5")
+        self.assertEqual(plan.queries, (("nsp_base_view_01", "SELECT 1 LIMIT 5"),))
+
     def test_both_generates_separate_sql_without_rerouting(self):
         context = {
             "pending": {

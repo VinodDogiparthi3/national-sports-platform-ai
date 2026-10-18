@@ -48,20 +48,37 @@ def resolve_pending_selection(reply: str, conversation_context):
     pending = _as_mapping(context.get("pending"))
     kind = pending.get("kind")
     options = pending.get("options") or []
+    normalized = normalize_reply(reply)
+    normalized = normalized.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا"}))
+    completed = not pending
+    year_reply = re.fullmatch(r"(?:19|20)\d{2}", normalized)
+    top_reply = re.fullmatch(r"(?:top|اعلى|افضل)\s+([1-9]\d?)", normalized)
+    if completed:
+        pending = {"question": context.get("last_question")}
+        kind = "views"
+        options = [{"view_id": source_id} for source_id in context.get("view_ids", [])]
     if kind not in {"views", "years"} or not options:
         return None
 
-    normalized = normalize_reply(reply)
-    normalized = normalized.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا"}))
     both = normalized in {
-        "both", "all", "both of them", "all of them", "both views", "all views",
+        "both", "all", "provide for all", "both of them", "all of them", "both views", "all views",
         "كلاهما", "كليهما", "الاثنين", "كلا الخيارين", "كلا العرضين", "جميعها", "جميعهم", "الكل",
     }
-    first = normalized in {"first", "the first", "first one", "option 1", "1", "الاول", "الاولى", "الخيار الاول", "الخيار الاولى"}
-    second = normalized in {"second", "the second", "second one", "option 2", "2", "الثاني", "الثانية", "الخيار الثاني", "الخيار الثانية"}
+    ordinals = (
+        {"first", "1st", "the first", "first one", "option 1", "1", "الاول", "الاولى", "الخيار الاول", "الخيار الاولى"},
+        {"second", "2nd", "the second", "second one", "option 2", "2", "الثاني", "الثانية", "الخيار الثاني", "الخيار الثانية"},
+        {"third", "3rd", "the third", "third one", "option 3", "3", "الثالث", "الثالثة", "الخيار الثالث", "الخيار الثالثة"},
+    )
+    selection_text = re.sub(r"\s+و(?=ال)", " and ", normalized)
+    parts = re.split(r"\s+(?:and|و)\s+", selection_text)
+    indices = [next((index for index, aliases in enumerate(ordinals) if part in aliases), None) for part in parts]
 
     selected = []
     selected_year = None
+    if completed and (year_reply or top_reply or normalized in {"compare", "قارن"}):
+        selected = options
+        if year_reply:
+            selected_year = int(normalized)
     if kind == "years":
         year_match = re.search(r"\b(?:19|20)\d{2}\b", normalized)
         if year_match:
@@ -70,33 +87,49 @@ def resolve_pending_selection(reply: str, conversation_context):
     if not selected:
         if both:
             selected = options
-        elif first and options:
-            selected = [options[0]]
-        elif second and len(options) > 1:
-            selected = [options[1]]
+        elif all(index is not None and index < len(options) for index in indices):
+            selected = [options[index] for index in indices]
 
     resolved_views = []
+    years_by_view = {}
     for option in selected:
         item = _as_mapping(option)
         source_id = item.get("source_id") or item.get("view_id")
         source = get_source(source_id or "")
         if source and source.source_id not in resolved_views:
             resolved_views.append(source.source_id)
-            if selected_year is None and item.get("year") is not None:
-                selected_year = int(item["year"])
+        if source and item.get("year") is not None:
+            years_by_view.setdefault(source.source_id, []).append(int(item["year"]))
     if not resolved_views:
         return None
 
     original_question = str(pending.get("question") or "").strip()
     if not original_question:
         return None
-    if selected_year is not None and not re.search(r"\b(?:19|20)\d{2}\b", original_question):
-        original_question = f"{original_question} for {selected_year}"
+    if selected_year is not None:
+        if re.search(r"\b(?:19|20)\d{2}\b", original_question):
+            original_question = re.sub(r"\b(?:19|20)\d{2}\b", str(selected_year), original_question)
+        else:
+            original_question = f"{original_question} for {selected_year}"
+    if top_reply and completed:
+        original_question = re.sub(r"\btop\s+\d+\b", "", original_question, flags=re.IGNORECASE).strip()
+        original_question = f"{original_question}; top {top_reply.group(1)}"
+    if completed and normalized in {"compare", "قارن"}:
+        original_question = f"Compare the results for: {original_question}"
+
+    questions_by_view = {}
+    for source_id, years in years_by_view.items():
+        question = re.sub(r"\b(?:19|20)\d{2}\b", "", str(pending.get("question") or "")).strip()
+        question = re.sub(r"\s+for\s*$", "", question, flags=re.IGNORECASE)
+        questions_by_view[source_id] = f"{question} for {' and '.join(str(year) for year in sorted(set(years)))}"
+    if len(resolved_views) == 1 and resolved_views[0] in questions_by_view:
+        original_question = questions_by_view[resolved_views[0]]
 
     return {
         "question": original_question,
         "view_ids": resolved_views,
         "year": selected_year,
+        "questions_by_view": questions_by_view,
     }
 
 
@@ -118,8 +151,10 @@ def translation_target(question: str, current_language: str) -> str | None:
 
 def is_explanation_request(question: str) -> bool:
     normalized = normalize_reply(question)
+    if normalized in {"explain", "why", "explain why", "اشرح", "وضح", "فسر", "لماذا"}:
+        return True
     return bool(
-        re.search(r"\b(explain|elaborate|interpret)\b", normalized)
+        re.search(r"\b(explain|elaborate|interpret|why)\b", normalized)
         and re.search(r"\b(previous|above|earlier|last|results?|answer)\b", normalized)
         or re.search(r"اشرح|وضح|فسر", normalized)
         and re.search(r"السابق|أعلاه|السابقة|النتائج|الإجابة", normalized)

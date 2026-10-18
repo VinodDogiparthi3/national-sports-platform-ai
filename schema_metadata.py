@@ -33,6 +33,16 @@ def clear_schema_cache() -> None:
         _values_cache.clear()
 
 
+def get_cached_source_columns(source) -> list[tuple[str, str, str]]:
+    if getattr(source, "query_authorized", False):
+        return source.schema_columns
+    with _lock:
+        cached = _cache.get(source.full_id.lower())
+        if cached and time.monotonic() - cached[0] < SCHEMA_CACHE_TTL_SECONDS:
+            return list(cached[1])
+    return []
+
+
 def get_view_columns(view_id: str) -> list[tuple[str, str, str]]:
     """Return columns for an approved view or table, cached with a TTL."""
     source = get_source(view_id)

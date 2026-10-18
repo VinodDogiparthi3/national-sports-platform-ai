@@ -1,6 +1,7 @@
 import os
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,8 @@ from config import BIGQUERY_DATASET_ID, BIGQUERY_PROJECT_ID, BIGQUERY_TABLE_ID
 from bigquery_catalog import ColumnMetadata, DiscoveredSource
 from bigquery_database import QueryBudgetExceeded
 from gemini_service import QueryPlan
+from view_catalog import ApprovedTable, get_view
+from view_router import RouteResult
 
 
 def parse_events(text):
@@ -30,6 +33,61 @@ class StreamingAskTests(unittest.TestCase):
 
     def plan(self, sql):
         return QueryPlan(queries=(("nsp_base_view_01", sql),))
+
+    def test_regions_clarification_then_all_reuses_three_sources_before_classification(self):
+        question = "total no.of regions and list of regions"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "CRM regions", "Regions", "CRM region list")
+        queries = [f"SELECT `region` FROM `{source.full_id}` LIMIT 10" for source in (
+            crm, get_view(source_ids[1]), get_view(source_ids[2]),
+        )]
+        for endpoint in ("/ask", "/ask/stream"):
+            for reply, expected_ids in (("all", source_ids), ("provide for all", source_ids),
+                                        ("third", source_ids[2:]), ("first and second", source_ids[:2]),
+                                        ("الكل", source_ids)):
+                with (
+                    self.subTest(endpoint=endpoint, reply=reply),
+                    patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                    patch("view_router.route_question", return_value=RouteResult(
+                        clarification="Choose: 1. CRM regions 2. NSP athlete registrations 3. Population statistics",
+                        candidate_view_ids=source_ids,
+                    )) as route,
+                    patch("app.is_metadata_question", return_value=False) as classify,
+                    patch("gemini_service.generate_sql", side_effect=lambda original, language, source_id, history: queries[source_ids.index(source_id)]) as generate,
+                    patch("sql_guardrails.get_view_columns", return_value=[("region", "STRING", "NULLABLE")]),
+                    patch("bigquery_database.client.query") as query,
+                    patch("app.generate_answer_stream", side_effect=lambda *args: iter(["Regions: fixture region"])),
+                    patch("app.generate_answer", return_value="Regions: fixture region"),
+                ):
+                    query.return_value.total_bytes_processed = 1
+                    result = query.return_value.result.return_value
+                    result.schema = [SimpleNamespace(name="region")]
+                    result.__iter__.side_effect = lambda: iter([{"region": "fixture region"}])
+                    initial = self.client.post(endpoint, json={"question": question})
+                    self.assertEqual(initial.status_code, 200)
+                    context = initial.json()["conversation_context"] if endpoint == "/ask" else next(
+                        payload["conversation_context"] for name, payload in parse_events(initial.text) if name == "context"
+                    )
+                    self.assertEqual(context["pending"]["question"], question)
+                    self.assertEqual([option["view_id"] for option in context["pending"]["options"]], list(source_ids))
+                    query.assert_not_called()
+                    response = self.client.post(endpoint, json={"question": reply, "conversation_context": context})
+                    self.assertEqual(response.status_code, 200)
+                    route.assert_called_once()
+                    classify.assert_called_once()
+                    self.assertEqual([call.args[0] for call in generate.call_args_list], [question] * len(expected_ids))
+                    self.assertEqual([call.args[2] for call in generate.call_args_list], list(expected_ids))
+                    executions = [call for call in query.call_args_list if not call.kwargs["job_config"].dry_run]
+                    self.assertEqual(len(executions), len(expected_ids))
+                    for call in executions:
+                        self.assertEqual(call.kwargs["job_config"].maximum_bytes_billed, 262144000)
+                    if endpoint.endswith("stream"):
+                        events = parse_events(response.text)
+                        self.assertEqual([payload["view_id"] for name, payload in events if name == "view_result"], list(expected_ids))
+                        self.assertEqual(events[-1][0], "done")
+                    else:
+                        self.assertEqual(response.json()["conversation_context"]["view_ids"], list(expected_ids))
+                    self.assertEqual(response.text.count("Regions: fixture region") >= len(expected_ids), True)
 
     def test_stream_endpoint_emits_status_sql_tokens_and_done(self):
         with (
@@ -213,6 +271,25 @@ class StreamingAskTests(unittest.TestCase):
             [("Football",)],
             "ar",
         )
+
+    def test_bare_explanation_follow_ups_never_plan_or_execute_queries(self):
+        history = [{"role": "assistant", "text": "Football: 12", "is_result": True}]
+        for question in ("explain", "why?", "اشرح", "لماذا؟"):
+            for endpoint in ("/ask", "/ask/stream"):
+                with (
+                    self.subTest(question=question, endpoint=endpoint),
+                    patch("app.generate_query_plan") as plan,
+                    patch("app.execute_sql_batch") as execute,
+                    patch("app.explain_previous_results", return_value="Explanation based on Football: 12") as explain,
+                ):
+                    response = self.client.post(endpoint, json={"question": question, "conversation_history": history})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn("Explanation based on Football: 12", response.text)
+                    if endpoint.endswith("stream"):
+                        self.assertIn("event: done", response.text)
+                    plan.assert_not_called()
+                    execute.assert_not_called()
+                    explain.assert_called_once()
 
     def test_english_ui_and_question_stream_english_response(self):
         with (

@@ -129,7 +129,7 @@ class MetadataCatalogTests(unittest.TestCase):
             patch("view_catalog.get_discovered_sources", return_value=(source,)) as discover,
         ):
             self.assertEqual(get_dynamic_authorized_sources(), ())
-        discover.assert_called_once()
+        discover.assert_not_called()
 
     def test_catalog_failure_falls_back_to_static_approved_views(self):
         with (

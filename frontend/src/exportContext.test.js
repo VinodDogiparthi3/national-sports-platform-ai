@@ -33,6 +33,42 @@ afterEach(() => {
 });
 
 describe("streamQuestion conversation context", () => {
+  it("returns the three-region clarification context on all in the same conversation", async () => {
+    const question = "total no.of regions and list of regions";
+    const sourceIds = ["dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01"];
+    const context = {
+      pending: { kind: "views", question, options: sourceIds.map((view_id) => ({ view_id })) },
+      last_question: question,
+      view_ids: sourceIds,
+    };
+    const messages = [{ role: "user", text: question }];
+    const assistant = { role: "assistant", text: "Choose CRM, NSP or population regions." };
+    const requests = [];
+    globalThis.fetch = async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      return requests.length === 1
+        ? sseResponse([["context", { conversation_context: context }], ["token", { text: assistant.text }], ["done", { question }]])
+        : sseResponse([
+          ...sourceIds.map((view_id) => ["view_result", { view_id, markdown: "Fixture regions" }]),
+          ["done", { question: "all" }],
+        ]);
+    };
+    await streamQuestion(question, "en", (event, payload) => {
+      if (event === "context") assistant.conversationContext = payload.conversation_context;
+    });
+    messages.push(assistant);
+    const viewResults = [];
+    await streamQuestion("all", "en", (event, payload) => {
+      if (event === "view_result") viewResults.push(payload);
+    }, getLatestExportContext(messages), getConversationHistory(messages), getLatestConversationContext(messages));
+
+    assert.deepEqual(requests[1].conversation_context, context);
+    assert.equal(requests[1].question, "all");
+    assert.equal(requests[1].conversation_history[1].is_result, false);
+    assert.deepEqual(viewResults.map(({ view_id }) => view_id), sourceIds);
+    assert.equal(getLatestConversationContext([{ role: "user", text: "A different conversation" }]), null);
+  });
+
   it("sends bounded conversation history and context separately from export context", async () => {
     let request;
     globalThis.fetch = async (url, options) => {

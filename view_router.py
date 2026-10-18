@@ -18,6 +18,8 @@ class RouteResult:
 
 
 def build_routing_prompt(question: str, language: str, columns_by_view: dict, history=()) -> str:
+    from schema_metadata import get_cached_source_columns
+
     entries = []
     queryable_sources = get_queryable_sources()
     for source in queryable_sources:
@@ -30,6 +32,10 @@ def build_routing_prompt(question: str, language: str, columns_by_view: dict, hi
                 "domain": sanitize_metadata_text(source.domain),
                 "description": sanitize_metadata_text(source.description),
                 "available_years": list(getattr(source, "available_years", ())),
+                "column_hints": [
+                    {"name": sanitize_metadata_text(name, limit=128), "type": sanitize_metadata_text(data_type, limit=32)}
+                    for name, data_type, _ in get_cached_source_columns(source)[:80]
+                ],
             }
         )
     response_language = "Arabic" if language == "ar" else "English"
@@ -53,6 +59,9 @@ Return only JSON: {{"source_id": <string or null>, "candidates": [<source_id>, .
 - If the question is a standalone new request, route it independently instead of forcing it into prior context.
 - If no source fits (unrelated question, greeting, schema/metadata request), set source_id to null, leave candidates empty.
 - Use only source_id values from the list. Match on business domain, description and column names (Arabic or English).
+- Column hints are cached authorized metadata, not a complete schema. An absent hint does not mean a column is absent.
+- Distinguish registrations, unique people, licenses, requests and expenditure. Do not treat them as interchangeable business metrics.
+- When the requested metric or reporting year is ambiguous, ask for clarification rather than inventing its definition.
 - clarification: only when source_id is null; one short question in {response_language}.
 
 Question: {json.dumps(question, ensure_ascii=False)}

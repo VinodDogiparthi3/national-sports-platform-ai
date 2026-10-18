@@ -271,18 +271,15 @@ def get_discovered_sources(*, force_refresh: bool = False) -> tuple[DiscoveredSo
 
 def get_dynamic_authorized_sources() -> tuple[DiscoveredSource, ...]:
     """Return only discovered objects covered by explicit dataset and column policies."""
-    if not BIGQUERY_DYNAMIC_CATALOG_ENABLED:
+    if not BIGQUERY_DYNAMIC_CATALOG_ENABLED or not BIGQUERY_DYNAMIC_ROUTING_ENABLED:
+        return ()
+    if not BIGQUERY_DYNAMIC_ALLOWED_DATASETS or not BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES:
         return ()
     try:
         discovered_sources = get_discovered_sources()
     except CatalogUnavailableError as error:
         print(f"\nPROJECT CATALOG UNAVAILABLE: {type(error).__name__}; using static source catalog.")
         return ()
-    if not BIGQUERY_DYNAMIC_ROUTING_ENABLED:
-        return ()
-    if not BIGQUERY_DYNAMIC_ALLOWED_DATASETS or not BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES:
-        return ()
-
     policies = {
         source_id.casefold(): {column.casefold() for column in columns}
         for source_id, columns in BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES.items()

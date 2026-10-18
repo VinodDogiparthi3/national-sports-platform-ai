@@ -54,7 +54,7 @@ from gemini_service import (
 )
 from sql_guardrails import validate_sql
 from view_catalog import find_source
-from conversation_context import is_explanation_request, previous_result_text, translation_target
+from conversation_context import is_explanation_request, previous_result_text, resolve_pending_selection, translation_target
 
 
 # --------------------------------------------------
@@ -673,7 +673,7 @@ def ask(request: QuestionRequest):
             )
             return {"question": request.question, "answer": answer}
 
-        if is_metadata_question(request.question):
+        if not resolve_pending_selection(request.question, request.conversation_context) and is_metadata_question(request.question):
             return {
                 "question": request.question,
                 "answer": clarification,
@@ -797,7 +797,7 @@ def ask_stream(request: QuestionRequest):
                 yield from _excel_export_events(request, response_language)
                 return
 
-            if is_metadata_question(request.question):
+            if not resolve_pending_selection(request.question, request.conversation_context) and is_metadata_question(request.question):
                 yield _sse_event("token", {"text": clarification})
                 yield _sse_event("done", {"question": request.question})
                 return

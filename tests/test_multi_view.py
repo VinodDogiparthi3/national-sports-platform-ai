@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -30,6 +31,63 @@ def fq(view_id):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_policy_authorized_sources_route_validate_and_execute_across_55_datasets(self):
+        from bigquery_database import execute_sql_batch
+        from gemini_service import generate_query_plan
+
+        sources = tuple(
+            DiscoveredSource(
+                project=PROJECT, dataset=f"dataset_{index}", name="metric_source",
+                object_type="TABLE" if index % 2 else "VIEW", description="Approved business metric",
+                columns=(ColumnMetadata("metric", "NUMERIC", "NULLABLE"),
+                         ColumnMetadata("secret", "STRING", "NULLABLE", policy_tags=("private",))),
+            )
+            for index in range(55)
+        )
+        discovered = sources + tuple(
+            DiscoveredSource(
+                project=PROJECT, dataset=f"dataset_{index % 55}", name=f"discovery_only_{index}",
+                object_type="TABLE", description=None, columns=(ColumnMetadata("metric", "NUMERIC", "NULLABLE"),),
+            )
+            for index in range(818)
+        )
+        self.assertEqual(len(discovered), 873)
+        with (
+            patch("view_catalog.BIGQUERY_DYNAMIC_CATALOG_ENABLED", True),
+            patch("view_catalog.BIGQUERY_DYNAMIC_ROUTING_ENABLED", True),
+            patch("view_catalog.BIGQUERY_DYNAMIC_ALLOWED_DATASETS", frozenset(source.dataset for source in sources)),
+            patch("view_catalog.BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES", {source.source_id: ["metric", "secret"] for source in sources}),
+            patch("view_catalog.get_authorized_tables", return_value=()),
+            patch("view_catalog.get_discovered_sources", return_value=discovered),
+            patch("bigquery_catalog.discover_project_catalog") as discover,
+            patch("gemini_service.client.models.generate_content") as generate,
+            patch("bigquery_database.client.query") as query,
+        ):
+            query.return_value.total_bytes_processed = 1
+            result = query.return_value.result.return_value
+            result.schema = [SimpleNamespace(name="metric")]
+            result.__iter__.side_effect = lambda: iter([{"metric": 42}])
+            for source in sources:
+                with self.subTest(dataset=source.dataset):
+                    generate.side_effect = [
+                        SimpleNamespace(text=json.dumps({"source_id": source.source_id})),
+                        SimpleNamespace(text=f"SELECT `metric` FROM `{source.full_id}`"),
+                    ]
+                    plan = generate_query_plan("Show the approved metric")
+                    self.assertEqual(plan.queries[0][0], source.source_id)
+                    sql = validate_sql(plan.queries[0][1])
+                    self.assertEqual(execute_sql_batch([sql]), [(["metric"], [(42,)])])
+                    with self.assertRaises(OutOfScopeQueryError):
+                        validate_sql(f"SELECT `secret` FROM `{source.full_id}`")
+                    with self.assertRaises(OutOfScopeQueryError):
+                        validate_sql(f"SELECT `metric` FROM `{PROJECT}.{source.dataset}.discovery_only_0`")
+            discover.assert_not_called()
+            self.assertEqual(query.call_count, 110)
+            for call in query.call_args_list:
+                config = call.kwargs["job_config"]
+                if not config.dry_run:
+                    self.assertEqual(config.maximum_bytes_billed, 262144000)
+
     def test_has_21_unique_views_in_3_datasets(self):
         self.assertEqual(len(APPROVED_VIEWS), 21)
         self.assertEqual(len({v.view for v in APPROVED_VIEWS}), 21)
@@ -247,7 +305,7 @@ class RouterParsingTests(unittest.TestCase):
             prompt_without_table = build_routing_prompt("List regions", "en", {})
         self.assertNotIn("ntw_regionBase", prompt_without_table)
 
-    def test_stage_a_prompt_omits_dynamic_columns_until_stage_b(self):
+    def test_stage_a_prompt_includes_only_cached_policy_column_hints(self):
         discovered = DiscoveredSource(
             project=PROJECT,
             dataset="dw_sharepoint",
@@ -274,7 +332,7 @@ class RouterParsingTests(unittest.TestCase):
             prompt = build_routing_prompt("Budget by project", "en", {})
 
         self.assertIn("budget_dynamic_view", prompt)
-        self.assertNotIn("budget_total", prompt)
+        self.assertIn('"name": "budget_total", "type": "NUMERIC"', prompt)
         self.assertNotIn("owner_email", prompt)
 
     def test_unknown_view_is_rejected(self):
