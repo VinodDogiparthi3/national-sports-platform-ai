@@ -34,6 +34,108 @@ class StreamingAskTests(unittest.TestCase):
     def plan(self, sql):
         return QueryPlan(queries=(("nsp_base_view_01", sql),))
 
+    def test_validation_rejection_preserves_context_and_logs_only_safe_metadata(self):
+        private_question = "PRIVATE_QUESTION_MARKER"
+        private_sql = "SELECT PRIVATE_SQL_MARKER FROM secret_source"
+        private_error = "PRIVATE_ERROR_MARKER bearer-token row-value"
+        context = {
+            "pending": {"kind": "views", "question": private_question, "options": [{"view_id": "nsp_base_view_01"}]},
+            "last_question": private_question, "view_ids": ["nsp_base_view_01"],
+        }
+        plan = QueryPlan(queries=(("nsp_base_view_01", private_sql),), conversation_context={
+            "pending": None, "last_question": private_question, "view_ids": ["nsp_base_view_01"],
+        })
+        for endpoint in ("/ask", "/ask/stream"):
+            for language in ("en", "ar"):
+                with (
+                    self.subTest(endpoint=endpoint, language=language),
+                    patch("app.generate_query_plan", return_value=plan),
+                    patch("app.validate_sql", side_effect=ValueError(private_error)),
+                    patch("app.execute_sql_batch") as execute,
+                    self.assertLogs("uvicorn.error", level="INFO") as captured,
+                ):
+                    response = self.client.post(endpoint, json={
+                        "question": "all", "language": language, "conversation_context": context,
+                    })
+                self.assertEqual(response.status_code, 200)
+                execute.assert_not_called()
+                if endpoint == "/ask":
+                    retained = response.json()["conversation_context"]
+                    message = response.json()["answer"]
+                else:
+                    events = parse_events(response.text)
+                    retained = next(payload["conversation_context"] for event, payload in events if event == "context")
+                    message = "".join(payload["text"] for event, payload in events if event == "token")
+                    self.assertEqual(events[-1][0], "done")
+                self.assertEqual(message, app.SQL_VALIDATION_MESSAGES[language])
+                self.assertEqual(retained, app.ConversationContext(**context).model_dump())
+                records = [json.loads(record.getMessage()) for record in captured.records]
+                self.assertEqual([record["stage"] for record in records], [
+                    "received", "selection_checked", "planning_started", "validation_rejected",
+                ])
+                self.assertEqual(len({record["request_id"] for record in records}), 1)
+                self.assertTrue(records[1]["selection_resolved"])
+                self.assertEqual(records[-1]["pending_option_count"], 1)
+                self.assertEqual(records[-1]["selected_source_count"], 1)
+                self.assertEqual(records[-1]["query_count"], 1)
+                self.assertEqual(records[-1]["reason"], "sql_guardrail_rejection")
+                allowed_keys = {"event", "request_id", "stage", "has_context", "pending_option_count",
+                                "selection_resolved", "selected_source_count", "query_count", "reason"}
+                for record in records:
+                    self.assertEqual(set(record), allowed_keys)
+                logged = "\n".join(captured.output)
+                for private_value in (private_question, private_sql, private_error, "nsp_base_view_01"):
+                    self.assertNotIn(private_value, logged)
+
+    def test_exact_cloud_region_clarification_keeps_context_even_when_sql_is_rejected(self):
+        question = "total no.of regions and list of regions"
+        cloud_text = "Which source should I use?\n(ntw_regionBase; Population Estimates Statistics View;\nNSP Base View)"
+        source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "population_estimates_statistics_view_01", "nsp_base_view_01")
+        crm = ApprovedTable("dw_ms_crm_onprem", "ntw_regionBase", "ntw_regionBase", "Regions", "CRM regions")
+        sources = (crm, get_view(source_ids[1]), get_view(source_ids[2]))
+        for reply in ("all", "provide for all"):
+            for reject_sql in (False, True):
+                with (
+                    self.subTest(reply=reply, reject_sql=reject_sql),
+                    patch("view_router.get_queryable_sources", return_value=sources),
+                    patch("view_catalog.get_authorized_tables", return_value=(crm,)),
+                    patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=json.dumps({
+                        "source_id": None, "candidates": list(source_ids), "clarification": cloud_text,
+                    }))) as model,
+                    patch("gemini_service.generate_sql", side_effect=lambda original, language, source_id, history:
+                          f"SELECT `{'region' if reject_sql or source_id != crm.source_id else 'ntw_name'}` FROM `{next(source for source in sources if source.source_id == source_id).full_id}`") as sql,
+                    patch("sql_guardrails.get_view_columns", side_effect=lambda source_id:
+                          [("ntw_name" if source_id == crm.source_id else "region", "STRING", "NULLABLE")]),
+                    patch("app.is_metadata_question", return_value=False) as classify,
+                    patch("app.execute_sql_batch", return_value=[(["region"], [("Mock region",)])] * 3) as execute,
+                    patch("app.generate_answer_stream", side_effect=lambda *args: iter(["Mock region"])),
+                ):
+                    initial = self.client.post("/ask/stream", json={"question": question})
+                    initial_events = parse_events(initial.text)
+                    context = next(payload["conversation_context"] for event, payload in initial_events if event == "context")
+                    message = "".join(payload["text"] for event, payload in initial_events if event == "token")
+                    self.assertEqual(" ".join(message.split()), " ".join(cloud_text.split()))
+                    self.assertEqual([option["view_id"] for option in context["pending"]["options"]], list(source_ids))
+                    self.assertEqual(context["pending"]["question"], question)
+                    self.assertLess([event for event, _ in initial_events].index("context"), [event for event, _ in initial_events].index("token"))
+                    request = app.QuestionRequest(question=reply, conversation_context=context)
+                    self.assertEqual(app.resolve_pending_selection(request.question, request.conversation_context)["view_ids"], list(source_ids))
+                    response = self.client.post("/ask/stream", json=request.model_dump())
+                    events = parse_events(response.text)
+                    model.assert_called_once()
+                    classify.assert_called_once()
+                    self.assertEqual([call.args[0] for call in sql.call_args_list], [question] * 3)
+                    self.assertEqual(events[-1][0], "done")
+                    if reject_sql:
+                        execute.assert_not_called()
+                        self.assertNotIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
+                        self.assertIn("generated SQL", response.text)
+                        retained = next(payload["conversation_context"] for event, payload in events if event == "context")
+                        self.assertEqual(retained, request.conversation_context.model_dump())
+                    else:
+                        execute.assert_called_once()
+                        self.assertEqual([payload["view_id"] for event, payload in events if event == "view_result"], list(source_ids))
+
     def test_missing_gemini_candidates_are_repaired_for_json_and_sse_follow_ups(self):
         question = "total no.of regions and list of regions"
         source_ids = ("dw_ms_crm_onprem.ntw_regionBase", "nsp_base_view_01", "population_estimates_statistics_view_01")
@@ -230,7 +332,7 @@ class StreamingAskTests(unittest.TestCase):
             denied = self.client.post("/ask/stream", json={"question": "unlisted"})
 
         denied_execute.assert_not_called()
-        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, denied.text)
+        self.assertIn(app.SQL_VALIDATION_MESSAGES["en"], denied.text)
         self.assertIn('"conversation_context": {"pending": null', response.text)
 
     def test_year_selection_uses_pending_original_question_and_selected_view(self):
@@ -537,7 +639,7 @@ class StreamingAskTests(unittest.TestCase):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+        self.assertEqual(response.json()["answer"], app.SQL_VALIDATION_MESSAGES["en"])
 
     def test_json_ask_clarifies_when_generated_query_uses_unknown_column(self):
         query = (
@@ -551,7 +653,7 @@ class StreamingAskTests(unittest.TestCase):
             response = self.client.post("/ask", json={"question": "Show company revenue"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+        self.assertEqual(response.json()["answer"], app.SQL_VALIDATION_MESSAGES["en"])
 
     def test_json_ask_hides_schema_validation_details(self):
         with (
@@ -564,7 +666,7 @@ class StreamingAskTests(unittest.TestCase):
             response = self.client.post("/ask", json={"question": "Show registrations"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["answer"], app.OUT_OF_SCOPE_CLARIFICATION)
+        self.assertEqual(response.json()["answer"], app.SQL_VALIDATION_MESSAGES["en"])
         self.assertNotIn("information_schema", response.text)
 
     def test_stream_ask_hides_schema_validation_details(self):
@@ -581,7 +683,7 @@ class StreamingAskTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(app.OUT_OF_SCOPE_CLARIFICATION, response.text)
+        self.assertIn(app.SQL_VALIDATION_MESSAGES["en"], response.text)
         self.assertNotIn("information_schema", response.text)
         self.assertNotIn("event: error", response.text)
 

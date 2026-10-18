@@ -1,10 +1,12 @@
 from difflib import get_close_matches
 from datetime import datetime, timezone
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 import sqlglot
 from fastapi import FastAPI, HTTPException
@@ -235,6 +237,11 @@ BUDGET_EXCEEDED_MESSAGES = {
     ),
 }
 
+SQL_VALIDATION_MESSAGES = {
+    "en": "The generated SQL did not pass safety validation. Please rephrase your data request and try again.",
+    "ar": "لم يجتز الاستعلام الذي تم إنشاؤه فحص الأمان. يرجى إعادة صياغة طلب البيانات والمحاولة مرة أخرى.",
+}
+
 ERROR_MESSAGES = {
     "permission": {
         "en": "The service does not have permission to read the required BigQuery data.",
@@ -368,6 +375,22 @@ def _queries_from_export_context(context):
 
 def _context_dict(context):
     return context.model_dump() if hasattr(context, "model_dump") else context
+
+
+def _log_query_stage(request_id: str, stage: str, *, context=None, selection=None, query_count: int = 0, reason: str | None = None):
+    data = _context_dict(context) or {}
+    pending = data.get("pending") or {}
+    logging.getLogger("uvicorn.error").info(json.dumps({
+        "event": "query_stage",
+        "request_id": request_id,
+        "stage": stage,
+        "has_context": bool(data),
+        "pending_option_count": len(pending.get("options") or []),
+        "selection_resolved": selection is not None,
+        "selected_source_count": len(selection.get("view_ids") or []) if selection else 0,
+        "query_count": query_count,
+        "reason": reason,
+    }))
 
 
 def _source_records(queries):
@@ -644,7 +667,8 @@ def download_excel_export(token: str):
 
 @app.post("/ask")
 def ask(request: QuestionRequest):
-
+    request_id = uuid4().hex
+    _log_query_stage(request_id, "received", context=request.conversation_context)
     try:
         response_language = get_response_language(request.question, request.language)
         clarification = get_out_of_scope_clarification(response_language)
@@ -673,13 +697,17 @@ def ask(request: QuestionRequest):
             )
             return {"question": request.question, "answer": answer}
 
-        if not resolve_pending_selection(request.question, request.conversation_context) and is_metadata_question(request.question):
+        selection = resolve_pending_selection(request.question, request.conversation_context)
+        _log_query_stage(request_id, "selection_checked", context=request.conversation_context, selection=selection)
+        if not selection and is_metadata_question(request.question):
+            _log_query_stage(request_id, "request_classified", reason="metadata_request")
             return {
                 "question": request.question,
                 "answer": clarification,
             }
 
         # 1. Natural language -> BigQuery SQL
+        _log_query_stage(request_id, "planning_started", selection=selection)
         plan = generate_query_plan(
             request.question,
             response_language,
@@ -688,6 +716,7 @@ def ask(request: QuestionRequest):
         )
 
         if plan.clarification:
+            _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context)
             return {
                 "question": request.question,
                 "answer": plan.clarification,
@@ -698,11 +727,16 @@ def ask(request: QuestionRequest):
         try:
             safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
         except ValueError:
+            context = _context_dict(request.conversation_context) or plan.conversation_context
+            _log_query_stage(request_id, "validation_rejected", context=context, selection=selection,
+                             query_count=len(plan.queries), reason="sql_guardrail_rejection")
             return {
                 "question": request.question,
-                "answer": clarification,
+                "answer": SQL_VALIDATION_MESSAGES[response_language],
+                **({"conversation_context": context} if context else {}),
             }
 
+        _log_query_stage(request_id, "execution_requested", selection=selection, query_count=len(safe_queries))
         results = execute_sql_batch([sql for _, sql in safe_queries])
         sections = []
         for (view_id, _), (columns, rows) in zip(safe_queries, results):
@@ -719,15 +753,18 @@ def ask(request: QuestionRequest):
             response["sources"] = sources
         if plan.conversation_context:
             response["conversation_context"] = plan.conversation_context
+        _log_query_stage(request_id, "completed", context=plan.conversation_context, query_count=len(safe_queries))
         return response
 
     except QueryBudgetExceeded:
+        _log_query_stage(request_id, "budget_rejected", reason="combined_budget_limit")
         return {
             "question": request.question,
             "answer": BUDGET_EXCEEDED_MESSAGES[response_language],
         }
 
     except ValueError as e:
+        _log_query_stage(request_id, "request_failed", reason="invalid_request")
         raise HTTPException(
             status_code=400,
             detail=(
@@ -738,9 +775,7 @@ def ask(request: QuestionRequest):
         )
 
     except Exception as e:
-        print("\nERROR IN /ask:")
-        print(type(e).__name__)
-        print(str(e))
+        _log_query_stage(request_id, "request_failed", reason="upstream_failure")
 
         raise HTTPException(
             status_code=500,
@@ -755,7 +790,10 @@ def _sse_event(event: str, payload: dict) -> str:
 
 @app.post("/ask/stream")
 def ask_stream(request: QuestionRequest):
+    request_id = uuid4().hex
+
     def event_stream():
+        _log_query_stage(request_id, "received", context=request.conversation_context)
         try:
             response_language = get_response_language(request.question, request.language)
             clarification = get_out_of_scope_clarification(response_language)
@@ -797,11 +835,15 @@ def ask_stream(request: QuestionRequest):
                 yield from _excel_export_events(request, response_language)
                 return
 
-            if not resolve_pending_selection(request.question, request.conversation_context) and is_metadata_question(request.question):
+            selection = resolve_pending_selection(request.question, request.conversation_context)
+            _log_query_stage(request_id, "selection_checked", context=request.conversation_context, selection=selection)
+            if not selection and is_metadata_question(request.question):
+                _log_query_stage(request_id, "request_classified", reason="metadata_request")
                 yield _sse_event("token", {"text": clarification})
                 yield _sse_event("done", {"question": request.question})
                 return
 
+            _log_query_stage(request_id, "planning_started", selection=selection)
             plan = generate_query_plan(
                 request.question,
                 response_language,
@@ -810,6 +852,7 @@ def ask_stream(request: QuestionRequest):
             )
 
             if plan.clarification:
+                _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context)
                 if plan.conversation_context:
                     yield _sse_event("context", {"conversation_context": plan.conversation_context})
                 yield _sse_event(
@@ -822,7 +865,12 @@ def ask_stream(request: QuestionRequest):
             try:
                 safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
             except ValueError:
-                yield _sse_event("token", {"text": clarification})
+                context = _context_dict(request.conversation_context) or plan.conversation_context
+                _log_query_stage(request_id, "validation_rejected", context=context, selection=selection,
+                                 query_count=len(plan.queries), reason="sql_guardrail_rejection")
+                if context:
+                    yield _sse_event("context", {"conversation_context": context})
+                yield _sse_event("token", {"text": SQL_VALIDATION_MESSAGES[response_language]})
                 yield _sse_event("done", {"question": request.question})
                 return
 
@@ -833,8 +881,10 @@ def ask_stream(request: QuestionRequest):
             source_by_view = {source["view"]: source for source in source_records}
 
             try:
+                _log_query_stage(request_id, "execution_requested", selection=selection, query_count=len(safe_queries))
                 query_results = execute_sql_batch([sql for _, sql in safe_queries])
             except QueryBudgetExceeded:
+                _log_query_stage(request_id, "budget_rejected", reason="combined_budget_limit")
                 yield _sse_event("token", {"text": BUDGET_EXCEEDED_MESSAGES[response_language]})
                 yield _sse_event("done", {"question": request.question})
                 return
@@ -875,9 +925,11 @@ def ask_stream(request: QuestionRequest):
                 ),
                 "conversation_context": conversation_context,
             })
+            _log_query_stage(request_id, "completed", context=conversation_context, query_count=len(safe_queries))
             yield _sse_event("done", {"question": request.question})
 
         except ValueError as e:
+            _log_query_stage(request_id, "request_failed", reason="invalid_request")
             yield _sse_event(
                 "error",
                 {
@@ -890,9 +942,7 @@ def ask_stream(request: QuestionRequest):
             )
 
         except Exception as e:
-            print("\nERROR IN /ask/stream:")
-            print(type(e).__name__)
-            print(str(e))
+            _log_query_stage(request_id, "request_failed", reason="upstream_failure")
             yield _sse_event(
                 "error",
                 {"message": get_error_message(e, response_language)},
