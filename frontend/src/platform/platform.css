@@ -1,0 +1,38 @@
+.platform-shell { --platform-bar-height: 64px; padding-top: var(--platform-bar-height); min-height: 100vh; width: 100%; }
+.platform-bar { position: fixed; inset: 0 0 auto; height: var(--platform-bar-height); z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 8px 24px; background: #fff; border-bottom: 1px solid #dce5df; color: #243d30; text-align: left; }
+.platform-brand { display: flex; align-items: center; gap: 9px; flex-shrink: 0; }
+.platform-brand > svg { color: #537968; }
+.platform-brand strong, .platform-brand span { display: block; }
+.platform-brand strong { font-size: 12px; }
+.platform-brand span { margin-top: 2px; color: #728176; font-size: 9px; }
+.platform-navigation { display: flex; align-items: stretch; gap: 8px; }
+.platform-navigation a { display: flex; align-items: center; gap: 8px; padding: 6px 12px; min-height: 43px; border-bottom: 2px solid transparent; color: #66786c; text-decoration: none; font-size: 11px; line-height: 1.35; }
+.platform-navigation a[aria-current="page"] { color: #006b4f; border-bottom-color: #006b4f; background: #eff6f1; }
+.platform-navigation a:hover { background: #f0f4f1; }
+.platform-navigation small { display: block; margin-top: 2px; font-size: 9px; color: #758379; }
+.platform-navigation svg { flex-shrink: 0; }
+.platform-navigation a:focus-visible { outline: 3px solid #397eaa; outline-offset: 2px; }
+.platform-view[hidden] { display: none !important; }
+.platform-view { min-width: 0; scroll-margin-top: calc(var(--platform-bar-height) + 12px); }
+.platform-view:focus { outline: none; }
+.platform-shell .platform-view[data-usecase="uc1"] .sidebar { top: var(--platform-bar-height); }
+.platform-shell .platform-view[data-usecase="uc1"] .workspace-header { top: var(--platform-bar-height); }
+.platform-shell .platform-view[data-usecase="uc1"] .sidebar-scrim { top: calc(var(--platform-bar-height) + 62px); }
+.platform-shell .platform-view[data-usecase="uc1"] .assistant-app,
+.platform-shell .platform-view[data-usecase="uc1"] .workspace-main,
+.platform-shell .platform-view[data-usecase="uc2"] .uc2-dashboard { min-height: calc(100vh - var(--platform-bar-height)); }
+.platform-shell .platform-view[data-usecase="uc2"] { text-align: left; }
+.platform-shell .platform-view[data-usecase="uc2"] :is(h1, h2, h3) { color: var(--uc2-ink, #202d29); font-family: inherit; }
+.platform-shell .uc2-records details, .platform-shell #uc2-main { scroll-margin-top: calc(var(--platform-bar-height) + 18px); }
+.platform-loading { min-height: 200px; display: grid; place-items: center; color: #65776a; font-size: 14px; }
+@media (max-width: 760px) {
+  .platform-shell { --platform-bar-height: 108px; }
+  .platform-bar { flex-direction: column; align-items: stretch; gap: 5px; padding: 8px 12px; }
+  .platform-brand { gap: 7px; }
+  .platform-brand strong { font-size: 10px; }
+  .platform-brand span { font-size: 8px; margin-top: 0; }
+  .platform-brand > svg { width: 16px; }
+  .platform-navigation { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5px; }
+  .platform-navigation a { padding: 5px 8px; font-size: 10px; min-height: 45px; }
+  .platform-navigation small { font-size: 8px; }
+}
