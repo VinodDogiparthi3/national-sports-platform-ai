@@ -1,0 +1,4377 @@
+{
+  "cutoffs": [
+    "2026-11-01T00:00:00Z",
+    "2026-10-10T09:00:00Z",
+    "2026-10-03T09:00:00Z"
+  ],
+  "data_mode": "synthetic",
+  "fixture_version": "synthetic-workflows-v1",
+  "months": [
+    "2026-10",
+    "2026-09"
+  ],
+  "policy": {
+    "end_to_end_sla_hours": 96.0,
+    "minimum_completed_cohort": 4,
+    "outlier_multiplier": 3.0,
+    "stage_sla_hours": {
+      "approval": 48.0,
+      "intake": 12.0,
+      "issuance": 12.0,
+      "review": 24.0
+    },
+    "time_convention": "utc_calendar_hours_waiting_included",
+    "version": "synthetic-calendar-v1"
+  },
+  "snapshots": [
+    {
+      "analyses": {
+        "SYN-A": {
+          "analysis_status": "complete",
+          "application_id": "SYN-A",
+          "as_of": "2026-11-01T00:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 48.0,
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT",
+                "A-I-IN",
+                "A-I-OUT",
+                "A-R-IN",
+                "A-R-OUT",
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "finding_id": "SYN-A-timing",
+              "statement": "Synthetic application elapsed time is 48 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-A-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_outlier",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-S"
+            }
+          ],
+          "stage_wall_clock_hours": 48.0,
+          "status": "completed",
+          "summed_stage_hours": 48.0
+        },
+        "SYN-B": {
+          "analysis_status": "complete",
+          "application_id": "SYN-B",
+          "as_of": "2026-11-01T00:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 72.0,
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "B-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "B-A-IN",
+                "B-A-OUT",
+                "B-I-IN",
+                "B-I-OUT",
+                "B-R-IN",
+                "B-R-OUT",
+                "B-S-IN",
+                "B-S-OUT"
+              ],
+              "finding_id": "SYN-B-timing",
+              "statement": "Synthetic application elapsed time is 72 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-B-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_outlier",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 36.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 36.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-S"
+            }
+          ],
+          "stage_wall_clock_hours": 72.0,
+          "status": "completed",
+          "summed_stage_hours": 72.0
+        },
+        "SYN-C": {
+          "analysis_status": "complete",
+          "application_id": "SYN-C",
+          "as_of": "2026-11-01T00:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 60.0,
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T21:00:00Z",
+              "evidence_id": "C-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "C-A-IN",
+                "C-A-OUT",
+                "C-I-IN",
+                "C-I-OUT",
+                "C-R-IN",
+                "C-R-OUT",
+                "C-S-IN",
+                "C-S-OUT"
+              ],
+              "finding_id": "SYN-C-timing",
+              "statement": "Synthetic application elapsed time is 60 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-C-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_outlier",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 24.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 24.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-S"
+            }
+          ],
+          "stage_wall_clock_hours": 60.0,
+          "status": "completed",
+          "summed_stage_hours": 60.0
+        },
+        "SYN-D": {
+          "analysis_status": "complete",
+          "application_id": "SYN-D",
+          "as_of": "2026-11-01T00:00:00Z",
+          "cause_status": "documented_blocker",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 600.0,
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-END",
+              "kind": "blocker_end",
+              "recorded_at": "2026-10-25T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports verification restored and waiting ended.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T21:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-EXIT",
+              "kind": "transition",
+              "recorded_at": "2026-10-25T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T21:00:00Z",
+              "evidence_id": "D-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-25T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "D-S",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-26T09:00:00Z",
+              "evidence_id": "D-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-26T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "D-S",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT",
+                "D-R-IN",
+                "D-R-OUT",
+                "D-S-IN",
+                "D-S-OUT",
+                "SYN-D-APPROVAL-ENTER",
+                "SYN-D-APPROVAL-EXIT"
+              ],
+              "finding_id": "SYN-D-timing",
+              "statement": "Synthetic application elapsed time is 600 hours; SLA status is breached."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "SYN-D-APPROVAL-ENTER",
+                "SYN-D-APPROVAL-EXIT"
+              ],
+              "finding_id": "SYN-D-approval-sla",
+              "statement": "Stage approval exceeds its synthetic stage SLA by 516 hours; this is timing evidence, not proof of root cause."
+            },
+            {
+              "classification": "reported",
+              "evidence_ids": [
+                "SYN-D-VERIFY-BLOCK-END",
+                "SYN-D-VERIFY-BLOCK-START"
+              ],
+              "finding_id": "SYN-D-D-A-blocker",
+              "statement": "Fictional workflow records document 552 blocked hours in visit D-A. This supports a recorded waiting interval, not an underlying root cause; the technical or organizational reason remains unestablished."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "outlier",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [
+            {
+              "classification": "recommendation",
+              "evidence_ids": [
+                "SYN-D-VERIFY-BLOCK-END",
+                "SYN-D-VERIFY-BLOCK-START"
+              ],
+              "finding_id": "SYN-D-recommended-review",
+              "statement": "Review the documented blocker with the workflow owner and define escalation and recovery actions; verify the underlying cause before assigning responsibility."
+            }
+          ],
+          "responsible_stage": "approval",
+          "sla_excess_hours": 504.0,
+          "sla_status": "breached",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 564.0,
+              "excess_hours": 516.0,
+              "sla_hours": 48.0,
+              "sla_status": "breached",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 552.0,
+              "elapsed_hours": 564.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 552.0,
+              "visit_id": "D-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-S"
+            }
+          ],
+          "stage_wall_clock_hours": 600.0,
+          "status": "completed",
+          "summed_stage_hours": 600.0
+        }
+      },
+      "as_of": "2026-11-01T00:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 600.0,
+        "outlier_count": 1
+      },
+      "received_month": "2026-10",
+      "summary": {
+        "application_count": 4,
+        "applications": [
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-A",
+            "elapsed_hours": 48.0,
+            "outlier_status": "not_outlier",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-B",
+            "elapsed_hours": 72.0,
+            "outlier_status": "not_outlier",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-C",
+            "elapsed_hours": 60.0,
+            "outlier_status": "not_outlier",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-D",
+            "elapsed_hours": 600.0,
+            "outlier_status": "outlier",
+            "responsible_stage": "approval",
+            "sla_excess_hours": 504.0,
+            "sla_status": "breached",
+            "status": "completed"
+          }
+        ],
+        "as_of": "2026-11-01T00:00:00Z",
+        "breached_count": 1,
+        "cohort_median_hours": 66.0,
+        "completed_count": 4,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": 198.0,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-10",
+        "unknown_sla_count": 0,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {
+        "SYN-A": {
+          "application_id": "SYN-A",
+          "completed_at": "2026-10-03T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "license_id": "SYN-LICENSE-A",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "A-I-IN",
+                "A-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "A-R-IN",
+                "A-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT"
+              ],
+              "exited_at": "2026-10-02T21:00:00Z",
+              "predecessor_visit_ids": [
+                "A-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T21:00:00Z",
+              "evidence_ids": [
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "A-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-A"
+        },
+        "SYN-B": {
+          "application_id": "SYN-B",
+          "completed_at": "2026-10-04T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "B-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "license_id": "SYN-LICENSE-B",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "B-I-IN",
+                "B-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "B-R-IN",
+                "B-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "B-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "B-A-IN",
+                "B-A-OUT"
+              ],
+              "exited_at": "2026-10-03T21:00:00Z",
+              "predecessor_visit_ids": [
+                "B-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "B-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-03T21:00:00Z",
+              "evidence_ids": [
+                "B-S-IN",
+                "B-S-OUT"
+              ],
+              "exited_at": "2026-10-04T09:00:00Z",
+              "predecessor_visit_ids": [
+                "B-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "B-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-B"
+        },
+        "SYN-C": {
+          "application_id": "SYN-C",
+          "completed_at": "2026-10-04T21:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T21:00:00Z",
+              "evidence_id": "C-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "license_id": "SYN-LICENSE-C",
+          "received_at": "2026-10-02T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "C-I-IN",
+                "C-I-OUT"
+              ],
+              "exited_at": "2026-10-02T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T15:00:00Z",
+              "evidence_ids": [
+                "C-R-IN",
+                "C-R-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "C-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-03T09:00:00Z",
+              "evidence_ids": [
+                "C-A-IN",
+                "C-A-OUT"
+              ],
+              "exited_at": "2026-10-04T09:00:00Z",
+              "predecessor_visit_ids": [
+                "C-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "C-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-04T09:00:00Z",
+              "evidence_ids": [
+                "C-S-IN",
+                "C-S-OUT"
+              ],
+              "exited_at": "2026-10-04T21:00:00Z",
+              "predecessor_visit_ids": [
+                "C-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "C-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-C"
+        },
+        "SYN-D": {
+          "application_id": "SYN-D",
+          "completed_at": "2026-10-26T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-END",
+              "kind": "blocker_end",
+              "recorded_at": "2026-10-25T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports verification restored and waiting ended.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T21:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-EXIT",
+              "kind": "transition",
+              "recorded_at": "2026-10-25T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-25T21:00:00Z",
+              "evidence_id": "D-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-25T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "D-S",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-26T09:00:00Z",
+              "evidence_id": "D-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-26T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "D-S",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "license_id": "SYN-LICENSE-D",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "D-R-IN",
+                "D-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "D-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [
+                {
+                  "ended_at": "2026-10-25T09:00:00Z",
+                  "evidence_ids": [
+                    "SYN-D-VERIFY-BLOCK-START",
+                    "SYN-D-VERIFY-BLOCK-END"
+                  ],
+                  "started_at": "2026-10-02T09:00:00Z"
+                }
+              ],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "SYN-D-APPROVAL-ENTER",
+                "SYN-D-APPROVAL-EXIT"
+              ],
+              "exited_at": "2026-10-25T21:00:00Z",
+              "predecessor_visit_ids": [
+                "D-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "D-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-25T21:00:00Z",
+              "evidence_ids": [
+                "D-S-IN",
+                "D-S-OUT"
+              ],
+              "exited_at": "2026-10-26T09:00:00Z",
+              "predecessor_visit_ids": [
+                "D-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "D-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-D"
+        }
+      }
+    },
+    {
+      "analyses": {
+        "SYN-A": {
+          "analysis_status": "complete",
+          "application_id": "SYN-A",
+          "as_of": "2026-10-10T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 48.0,
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT",
+                "A-I-IN",
+                "A-I-OUT",
+                "A-R-IN",
+                "A-R-OUT",
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "finding_id": "SYN-A-timing",
+              "statement": "Synthetic application elapsed time is 48 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-A-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "insufficient_cohort",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-S"
+            }
+          ],
+          "stage_wall_clock_hours": 48.0,
+          "status": "completed",
+          "summed_stage_hours": 48.0
+        },
+        "SYN-B": {
+          "analysis_status": "complete",
+          "application_id": "SYN-B",
+          "as_of": "2026-10-10T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 72.0,
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "B-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "B-A-IN",
+                "B-A-OUT",
+                "B-I-IN",
+                "B-I-OUT",
+                "B-R-IN",
+                "B-R-OUT",
+                "B-S-IN",
+                "B-S-OUT"
+              ],
+              "finding_id": "SYN-B-timing",
+              "statement": "Synthetic application elapsed time is 72 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-B-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "insufficient_cohort",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 36.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 36.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-S"
+            }
+          ],
+          "stage_wall_clock_hours": 72.0,
+          "status": "completed",
+          "summed_stage_hours": 72.0
+        },
+        "SYN-C": {
+          "analysis_status": "complete",
+          "application_id": "SYN-C",
+          "as_of": "2026-10-10T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 60.0,
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T21:00:00Z",
+              "evidence_id": "C-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "C-A-IN",
+                "C-A-OUT",
+                "C-I-IN",
+                "C-I-OUT",
+                "C-R-IN",
+                "C-R-OUT",
+                "C-S-IN",
+                "C-S-OUT"
+              ],
+              "finding_id": "SYN-C-timing",
+              "statement": "Synthetic application elapsed time is 60 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-C-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "insufficient_cohort",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 24.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 24.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-S"
+            }
+          ],
+          "stage_wall_clock_hours": 60.0,
+          "status": "completed",
+          "summed_stage_hours": 60.0
+        },
+        "SYN-D": {
+          "analysis_status": "complete",
+          "application_id": "SYN-D",
+          "as_of": "2026-10-10T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 216.0,
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT",
+                "D-R-IN",
+                "D-R-OUT",
+                "SYN-D-APPROVAL-ENTER"
+              ],
+              "finding_id": "SYN-D-timing",
+              "statement": "Synthetic application elapsed time is 216 hours; SLA status is breached."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "SYN-D-APPROVAL-ENTER"
+              ],
+              "finding_id": "SYN-D-approval-sla",
+              "statement": "Stage approval exceeds its synthetic stage SLA by 144 hours; this is timing evidence, not proof of root cause."
+            },
+            {
+              "classification": "reported",
+              "evidence_ids": [
+                "SYN-D-VERIFY-BLOCK-START"
+              ],
+              "finding_id": "SYN-D-D-A-blocker",
+              "statement": "Fictional workflow records document 192 blocked hours in visit D-A. This supports a recorded waiting interval, not an underlying root cause; the technical or organizational reason remains unestablished."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-D-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_eligible",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [
+            {
+              "classification": "recommendation",
+              "evidence_ids": [
+                "SYN-D-VERIFY-BLOCK-START"
+              ],
+              "finding_id": "SYN-D-recommended-review",
+              "statement": "Obtain missing stage transitions and linked blocker evidence before assigning a root cause or corrective action."
+            }
+          ],
+          "responsible_stage": null,
+          "sla_excess_hours": 120.0,
+          "sla_status": "breached",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 192.0,
+              "excess_hours": 144.0,
+              "sla_hours": 48.0,
+              "sla_status": "breached",
+              "stage_code": "approval"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 192.0,
+              "elapsed_hours": 192.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 192.0,
+              "visit_id": "D-A"
+            }
+          ],
+          "stage_wall_clock_hours": 216.0,
+          "status": "open",
+          "summed_stage_hours": 216.0
+        }
+      },
+      "as_of": "2026-10-10T09:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 216.0,
+        "outlier_count": 0
+      },
+      "received_month": "2026-10",
+      "summary": {
+        "application_count": 4,
+        "applications": [
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-A",
+            "elapsed_hours": 48.0,
+            "outlier_status": "insufficient_cohort",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-B",
+            "elapsed_hours": 72.0,
+            "outlier_status": "insufficient_cohort",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-C",
+            "elapsed_hours": 60.0,
+            "outlier_status": "insufficient_cohort",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-D",
+            "elapsed_hours": 216.0,
+            "outlier_status": "not_eligible",
+            "responsible_stage": null,
+            "sla_excess_hours": 120.0,
+            "sla_status": "breached",
+            "status": "open"
+          }
+        ],
+        "as_of": "2026-10-10T09:00:00Z",
+        "breached_count": 1,
+        "cohort_median_hours": 60.0,
+        "completed_count": 3,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": null,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-10",
+        "unknown_sla_count": 0,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {
+        "SYN-A": {
+          "application_id": "SYN-A",
+          "completed_at": "2026-10-03T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "license_id": "SYN-LICENSE-A",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "A-I-IN",
+                "A-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "A-R-IN",
+                "A-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT"
+              ],
+              "exited_at": "2026-10-02T21:00:00Z",
+              "predecessor_visit_ids": [
+                "A-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T21:00:00Z",
+              "evidence_ids": [
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "A-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-A"
+        },
+        "SYN-B": {
+          "application_id": "SYN-B",
+          "completed_at": "2026-10-04T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-03T21:00:00Z",
+              "evidence_id": "B-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "B-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "B-S",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "license_id": "SYN-LICENSE-B",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "B-I-IN",
+                "B-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "B-R-IN",
+                "B-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "B-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "B-A-IN",
+                "B-A-OUT"
+              ],
+              "exited_at": "2026-10-03T21:00:00Z",
+              "predecessor_visit_ids": [
+                "B-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "B-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-03T21:00:00Z",
+              "evidence_ids": [
+                "B-S-IN",
+                "B-S-OUT"
+              ],
+              "exited_at": "2026-10-04T09:00:00Z",
+              "predecessor_visit_ids": [
+                "B-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "B-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-B"
+        },
+        "SYN-C": {
+          "application_id": "SYN-C",
+          "completed_at": "2026-10-04T21:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T09:00:00Z",
+              "evidence_id": "C-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-04T21:00:00Z",
+              "evidence_id": "C-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-04T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "C-S",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "license_id": "SYN-LICENSE-C",
+          "received_at": "2026-10-02T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "C-I-IN",
+                "C-I-OUT"
+              ],
+              "exited_at": "2026-10-02T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T15:00:00Z",
+              "evidence_ids": [
+                "C-R-IN",
+                "C-R-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "C-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-03T09:00:00Z",
+              "evidence_ids": [
+                "C-A-IN",
+                "C-A-OUT"
+              ],
+              "exited_at": "2026-10-04T09:00:00Z",
+              "predecessor_visit_ids": [
+                "C-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "C-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-04T09:00:00Z",
+              "evidence_ids": [
+                "C-S-IN",
+                "C-S-OUT"
+              ],
+              "exited_at": "2026-10-04T21:00:00Z",
+              "predecessor_visit_ids": [
+                "C-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "C-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-C"
+        },
+        "SYN-D": {
+          "application_id": "SYN-D",
+          "completed_at": null,
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "license_id": "SYN-LICENSE-D",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "D-R-IN",
+                "D-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "D-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [
+                {
+                  "ended_at": null,
+                  "evidence_ids": [
+                    "SYN-D-VERIFY-BLOCK-START"
+                  ],
+                  "started_at": "2026-10-02T09:00:00Z"
+                }
+              ],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "SYN-D-APPROVAL-ENTER"
+              ],
+              "exited_at": null,
+              "predecessor_visit_ids": [
+                "D-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "D-A"
+            }
+          ],
+          "status": "open",
+          "workflow_instance_id": "SYN-WF-D"
+        }
+      }
+    },
+    {
+      "analyses": {
+        "SYN-A": {
+          "analysis_status": "complete",
+          "application_id": "SYN-A",
+          "as_of": "2026-10-03T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 48.0,
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT",
+                "A-I-IN",
+                "A-I-OUT",
+                "A-R-IN",
+                "A-R-OUT",
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "finding_id": "SYN-A-timing",
+              "statement": "Synthetic application elapsed time is 48 hours; SLA status is within_sla."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-A-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "insufficient_cohort",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": 0.0,
+          "sla_status": "within_sla",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 48.0,
+              "sla_status": "within_sla",
+              "stage_code": "approval"
+            },
+            {
+              "elapsed_hours": 12.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "issuance"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 12.0,
+              "stage_code": "issuance",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "A-S"
+            }
+          ],
+          "stage_wall_clock_hours": 48.0,
+          "status": "completed",
+          "summed_stage_hours": 48.0
+        },
+        "SYN-B": {
+          "analysis_status": "complete",
+          "application_id": "SYN-B",
+          "as_of": "2026-10-03T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 48.0,
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "B-A-IN",
+                "B-I-IN",
+                "B-I-OUT",
+                "B-R-IN",
+                "B-R-OUT"
+              ],
+              "finding_id": "SYN-B-timing",
+              "statement": "Synthetic application elapsed time is 48 hours; SLA status is unknown."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-B-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_eligible",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": null,
+          "sla_status": "unknown",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 24.0,
+              "excess_hours": null,
+              "sla_hours": 48.0,
+              "sla_status": "unknown",
+              "stage_code": "approval"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 24.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "B-A"
+            }
+          ],
+          "stage_wall_clock_hours": 48.0,
+          "status": "open",
+          "summed_stage_hours": 48.0
+        },
+        "SYN-C": {
+          "analysis_status": "complete",
+          "application_id": "SYN-C",
+          "as_of": "2026-10-03T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 24.0,
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "C-A-IN",
+                "C-I-IN",
+                "C-I-OUT",
+                "C-R-IN",
+                "C-R-OUT"
+              ],
+              "finding_id": "SYN-C-timing",
+              "statement": "Synthetic application elapsed time is 24 hours; SLA status is unknown."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-C-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_eligible",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": null,
+          "sla_status": "unknown",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 0.0,
+              "excess_hours": null,
+              "sla_hours": 48.0,
+              "sla_status": "unknown",
+              "stage_code": "approval"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 0.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "C-A"
+            }
+          ],
+          "stage_wall_clock_hours": 24.0,
+          "status": "open",
+          "summed_stage_hours": 24.0
+        },
+        "SYN-D": {
+          "analysis_status": "complete",
+          "application_id": "SYN-D",
+          "as_of": "2026-10-03T09:00:00Z",
+          "cause_status": "insufficient_evidence",
+          "data_mode": "synthetic",
+          "data_quality_issues": [],
+          "elapsed_hours": 48.0,
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "findings": [
+            {
+              "classification": "observed",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT",
+                "D-R-IN",
+                "D-R-OUT",
+                "SYN-D-APPROVAL-ENTER"
+              ],
+              "finding_id": "SYN-D-timing",
+              "statement": "Synthetic application elapsed time is 48 hours; SLA status is unknown."
+            },
+            {
+              "classification": "reported",
+              "evidence_ids": [
+                "SYN-D-VERIFY-BLOCK-START"
+              ],
+              "finding_id": "SYN-D-D-A-blocker",
+              "statement": "Fictional workflow records document 24 blocked hours in visit D-A. This supports a recorded waiting interval, not an underlying root cause; the technical or organizational reason remains unestablished."
+            },
+            {
+              "classification": "observed",
+              "evidence_ids": [],
+              "finding_id": "SYN-D-insufficient-evidence",
+              "statement": "Insufficient evidence to establish a root cause for an application delay."
+            }
+          ],
+          "fixture_version": "synthetic-workflows-v1",
+          "hypotheses": [],
+          "outlier_status": "not_eligible",
+          "policy_version": "synthetic-calendar-v1",
+          "recommendations": [],
+          "responsible_stage": null,
+          "sla_excess_hours": null,
+          "sla_status": "unknown",
+          "stage_totals": [
+            {
+              "elapsed_hours": 6.0,
+              "excess_hours": 0.0,
+              "sla_hours": 12.0,
+              "sla_status": "within_sla",
+              "stage_code": "intake"
+            },
+            {
+              "elapsed_hours": 18.0,
+              "excess_hours": 0.0,
+              "sla_hours": 24.0,
+              "sla_status": "within_sla",
+              "stage_code": "review"
+            },
+            {
+              "elapsed_hours": 24.0,
+              "excess_hours": null,
+              "sla_hours": 48.0,
+              "sla_status": "unknown",
+              "stage_code": "approval"
+            }
+          ],
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 6.0,
+              "stage_code": "intake",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 0.0,
+              "elapsed_hours": 18.0,
+              "stage_code": "review",
+              "supported_blocked_hours": 0.0,
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocked_hours": 24.0,
+              "elapsed_hours": 24.0,
+              "stage_code": "approval",
+              "supported_blocked_hours": 24.0,
+              "visit_id": "D-A"
+            }
+          ],
+          "stage_wall_clock_hours": 48.0,
+          "status": "open",
+          "summed_stage_hours": 48.0
+        }
+      },
+      "as_of": "2026-10-03T09:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 48.0,
+        "outlier_count": 0
+      },
+      "received_month": "2026-10",
+      "summary": {
+        "application_count": 4,
+        "applications": [
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-A",
+            "elapsed_hours": 48.0,
+            "outlier_status": "insufficient_cohort",
+            "responsible_stage": null,
+            "sla_excess_hours": 0.0,
+            "sla_status": "within_sla",
+            "status": "completed"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-B",
+            "elapsed_hours": 48.0,
+            "outlier_status": "not_eligible",
+            "responsible_stage": null,
+            "sla_excess_hours": null,
+            "sla_status": "unknown",
+            "status": "open"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-C",
+            "elapsed_hours": 24.0,
+            "outlier_status": "not_eligible",
+            "responsible_stage": null,
+            "sla_excess_hours": null,
+            "sla_status": "unknown",
+            "status": "open"
+          },
+          {
+            "analysis_status": "complete",
+            "application_id": "SYN-D",
+            "elapsed_hours": 48.0,
+            "outlier_status": "not_eligible",
+            "responsible_stage": null,
+            "sla_excess_hours": null,
+            "sla_status": "unknown",
+            "status": "open"
+          }
+        ],
+        "as_of": "2026-10-03T09:00:00Z",
+        "breached_count": 0,
+        "cohort_median_hours": 48.0,
+        "completed_count": 1,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": null,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-10",
+        "unknown_sla_count": 3,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {
+        "SYN-A": {
+          "application_id": "SYN-A",
+          "completed_at": "2026-10-03T09:00:00Z",
+          "evidence": [
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "A-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "A-I",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "A-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "A-R",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "A-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-A-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval exit.",
+              "visit_id": "A-A",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-02T21:00:00Z",
+              "evidence_id": "A-S-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T21:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance entry.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            },
+            {
+              "application_id": "SYN-A",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "A-S-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional issuance exit and application completion.",
+              "visit_id": "A-S",
+              "workflow_instance_id": "SYN-WF-A"
+            }
+          ],
+          "license_id": "SYN-LICENSE-A",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "A-I-IN",
+                "A-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "A-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "A-R-IN",
+                "A-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "A-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "A-A-IN",
+                "A-A-OUT"
+              ],
+              "exited_at": "2026-10-02T21:00:00Z",
+              "predecessor_visit_ids": [
+                "A-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "A-A"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T21:00:00Z",
+              "evidence_ids": [
+                "A-S-IN",
+                "A-S-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "A-A"
+              ],
+              "stage_code": "issuance",
+              "visit_id": "A-S"
+            }
+          ],
+          "status": "completed",
+          "workflow_instance_id": "SYN-WF-A"
+        },
+        "SYN-B": {
+          "application_id": "SYN-B",
+          "completed_at": null,
+          "evidence": [
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "B-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "B-I",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "B-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "B-R",
+              "workflow_instance_id": "SYN-WF-B"
+            },
+            {
+              "application_id": "SYN-B",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "B-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "B-A",
+              "workflow_instance_id": "SYN-WF-B"
+            }
+          ],
+          "license_id": "SYN-LICENSE-B",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "B-I-IN",
+                "B-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "B-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "B-R-IN",
+                "B-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "B-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "B-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "B-A-IN"
+              ],
+              "exited_at": null,
+              "predecessor_visit_ids": [
+                "B-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "B-A"
+            }
+          ],
+          "status": "open",
+          "workflow_instance_id": "SYN-WF-B"
+        },
+        "SYN-C": {
+          "application_id": "SYN-C",
+          "completed_at": null,
+          "evidence": [
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "C-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "C-I",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-02T15:00:00Z",
+              "evidence_id": "C-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "C-R",
+              "workflow_instance_id": "SYN-WF-C"
+            },
+            {
+              "application_id": "SYN-C",
+              "effective_at": "2026-10-03T09:00:00Z",
+              "evidence_id": "C-A-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-03T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "C-A",
+              "workflow_instance_id": "SYN-WF-C"
+            }
+          ],
+          "license_id": "SYN-LICENSE-C",
+          "received_at": "2026-10-02T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "C-I-IN",
+                "C-I-OUT"
+              ],
+              "exited_at": "2026-10-02T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "C-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-02T15:00:00Z",
+              "evidence_ids": [
+                "C-R-IN",
+                "C-R-OUT"
+              ],
+              "exited_at": "2026-10-03T09:00:00Z",
+              "predecessor_visit_ids": [
+                "C-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "C-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-03T09:00:00Z",
+              "evidence_ids": [
+                "C-A-IN"
+              ],
+              "exited_at": null,
+              "predecessor_visit_ids": [
+                "C-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "C-A"
+            }
+          ],
+          "status": "open",
+          "workflow_instance_id": "SYN-WF-C"
+        },
+        "SYN-D": {
+          "application_id": "SYN-D",
+          "completed_at": null,
+          "evidence": [
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T09:00:00Z",
+              "evidence_id": "D-I-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake entry.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-I-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional intake exit.",
+              "visit_id": "D-I",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-01T15:00:00Z",
+              "evidence_id": "D-R-IN",
+              "kind": "transition",
+              "recorded_at": "2026-10-01T15:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review entry.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "D-R-OUT",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional review exit.",
+              "visit_id": "D-R",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-APPROVAL-ENTER",
+              "kind": "transition",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional approval entry.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            },
+            {
+              "application_id": "SYN-D",
+              "effective_at": "2026-10-02T09:00:00Z",
+              "evidence_id": "SYN-D-VERIFY-BLOCK-START",
+              "kind": "blocker_start",
+              "recorded_at": "2026-10-02T09:00:00Z",
+              "synthetic": true,
+              "text": "Fictional workflow record reports external verification unavailable; approval is waiting. The underlying reason is not recorded.",
+              "visit_id": "D-A",
+              "workflow_instance_id": "SYN-WF-D"
+            }
+          ],
+          "license_id": "SYN-LICENSE-D",
+          "received_at": "2026-10-01T09:00:00Z",
+          "stage_visits": [
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T09:00:00Z",
+              "evidence_ids": [
+                "D-I-IN",
+                "D-I-OUT"
+              ],
+              "exited_at": "2026-10-01T15:00:00Z",
+              "predecessor_visit_ids": [],
+              "stage_code": "intake",
+              "visit_id": "D-I"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [],
+              "entered_at": "2026-10-01T15:00:00Z",
+              "evidence_ids": [
+                "D-R-IN",
+                "D-R-OUT"
+              ],
+              "exited_at": "2026-10-02T09:00:00Z",
+              "predecessor_visit_ids": [
+                "D-I"
+              ],
+              "stage_code": "review",
+              "visit_id": "D-R"
+            },
+            {
+              "attempt": 1,
+              "blocking_intervals": [
+                {
+                  "ended_at": null,
+                  "evidence_ids": [
+                    "SYN-D-VERIFY-BLOCK-START"
+                  ],
+                  "started_at": "2026-10-02T09:00:00Z"
+                }
+              ],
+              "entered_at": "2026-10-02T09:00:00Z",
+              "evidence_ids": [
+                "SYN-D-APPROVAL-ENTER"
+              ],
+              "exited_at": null,
+              "predecessor_visit_ids": [
+                "D-R"
+              ],
+              "stage_code": "approval",
+              "visit_id": "D-A"
+            }
+          ],
+          "status": "open",
+          "workflow_instance_id": "SYN-WF-D"
+        }
+      }
+    },
+    {
+      "analyses": {},
+      "as_of": "2026-11-01T00:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 0,
+        "outlier_count": 0
+      },
+      "received_month": "2026-09",
+      "summary": {
+        "application_count": 0,
+        "applications": [],
+        "as_of": "2026-11-01T00:00:00Z",
+        "breached_count": 0,
+        "cohort_median_hours": null,
+        "completed_count": 0,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": null,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-09",
+        "unknown_sla_count": 0,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {}
+    },
+    {
+      "analyses": {},
+      "as_of": "2026-10-10T09:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 0,
+        "outlier_count": 0
+      },
+      "received_month": "2026-09",
+      "summary": {
+        "application_count": 0,
+        "applications": [],
+        "as_of": "2026-10-10T09:00:00Z",
+        "breached_count": 0,
+        "cohort_median_hours": null,
+        "completed_count": 0,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": null,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-09",
+        "unknown_sla_count": 0,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {}
+    },
+    {
+      "analyses": {},
+      "as_of": "2026-10-03T09:00:00Z",
+      "presentation": {
+        "maximum_elapsed_hours": 0,
+        "outlier_count": 0
+      },
+      "received_month": "2026-09",
+      "summary": {
+        "application_count": 0,
+        "applications": [],
+        "as_of": "2026-10-03T09:00:00Z",
+        "breached_count": 0,
+        "cohort_median_hours": null,
+        "completed_count": 0,
+        "data_mode": "synthetic",
+        "fixture_version": "synthetic-workflows-v1",
+        "outlier_threshold_hours": null,
+        "policy_version": "synthetic-calendar-v1",
+        "received_month": "2026-09",
+        "unknown_sla_count": 0,
+        "warnings": [
+          "All records, identifiers, evidence, and causes are fictional demonstration data.",
+          "Elapsed UTC calendar hours include waiting; no holiday exclusions or paused SLA clocks apply.",
+          "Demonstration SLA: 96 hours end-to-end; intake 12, review 24, approval 48, issuance 12 hours.",
+          "Outliers exceed three times the completed-cohort median with at least four completed applications; this is a small-sample heuristic, not a client SLA.",
+          "Default demonstration evaluation uses the explicit cutoff 2026-11-01T00:00:00Z, never the current system clock.",
+          "The outlier rule is a small-sample demonstration heuristic, not a client-approved SLA."
+        ]
+      },
+      "workflows": {}
+    }
+  ]
+}
