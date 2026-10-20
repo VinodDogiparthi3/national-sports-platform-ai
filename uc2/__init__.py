@@ -1,0 +1,1 @@
+"""Isolated synthetic licensing analytics; no application or cloud imports."""
