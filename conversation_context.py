@@ -57,7 +57,12 @@ def resolve_pending_selection(reply: str, conversation_context):
         pending = {"question": context.get("last_question")}
         kind = "views"
         options = [{"view_id": source_id} for source_id in context.get("view_ids", [])]
-    if kind not in {"views", "years"} or not options:
+    if kind not in {"views", "years", "details"} or not options:
+        return None
+    if kind == "details" and re.match(
+        r"^(?:how many|what is|what are|who are|where are|show me|list all|كم عدد|ما هو|ما هي)\b",
+        normalized,
+    ):
         return None
 
     both = normalized in {
@@ -71,10 +76,16 @@ def resolve_pending_selection(reply: str, conversation_context):
     )
     selection_text = re.sub(r"\s+و(?=ال)", " and ", normalized)
     parts = re.split(r"\s+(?:and|و)\s+", selection_text)
-    indices = [next((index for index, aliases in enumerate(ordinals) if part in aliases), None) for part in parts]
+    indices = [
+        int(part) - 1 if re.fullmatch(r"[1-9]|10", part)
+        else next((index for index, aliases in enumerate(ordinals) if part in aliases), None)
+        for part in parts
+    ]
 
     selected = []
     selected_year = None
+    if kind == "details":
+        selected = options
     if completed and (year_reply or top_reply or normalized in {"compare", "قارن"}):
         selected = options
         if year_reply:
@@ -106,6 +117,12 @@ def resolve_pending_selection(reply: str, conversation_context):
     original_question = str(pending.get("question") or "").strip()
     if not original_question:
         return None
+    if kind == "details":
+        original_question = (
+            f"Original question: {original_question}\n"
+            f"Clarification asked: {pending.get('clarification') or ''}\n"
+            f"User reply: {reply}"
+        )
     if selected_year is not None:
         if re.search(r"\b(?:19|20)\d{2}\b", original_question):
             original_question = re.sub(r"\b(?:19|20)\d{2}\b", str(selected_year), original_question)

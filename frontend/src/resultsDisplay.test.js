@@ -57,6 +57,36 @@ describe("parseResultCards", () => {
     });
   });
 
+  it("shows separate equal cards for multiple metrics and keeps shared context", () => {
+    const cards = parseResultCards([
+      "| Age Group | Year | Saudi 2024 Final Total | Non-Saudi 2024 Total |",
+      "| --- | --- | ---: | ---: |",
+      "| 0–4 | 2024 | 2,126,538 | 378,651 |",
+    ].join("\n"), "Population Estimates Statistics View");
+
+    assert.deepEqual(cards.map(({ label, value, valueLabel, details }) => ({ label, value, valueLabel, details })), [
+      { label: "Saudi Population (2024)", value: "2,126,538", valueLabel: "", details: ["Age Group: 0–4", "Year: 2024"] },
+      { label: "Non-Saudi Population (2024)", value: "378,651", valueLabel: "", details: ["Age Group: 0–4", "Year: 2024"] },
+    ]);
+    assert.equal(cards[0].icon, cards[1].icon);
+  });
+
+  it("fans out every metric for every row without turning dimensions or IDs into metrics", () => {
+    const cards = parseResultCards([
+      "| Age Group | Year | Region ID | ContactID | RegionCode | Description | Saudi 2024 Final Total | Non-Saudi 2024 Total |",
+      "| --- | ---: | --- | ---: | ---: | --- | ---: | ---: |",
+      "| 0–4 | 2024 | 1001 | 90001 | 1001 | 2024 | 2,126,538 | 378,651 |",
+      "| 5–9 | 2024 | 1002 | 90002 | 1002 | 2025 | 1,998,200 | 402,190 |",
+    ].join("\n"), "Population Estimates Statistics View");
+
+    assert.deepEqual(cards.map(({ label, value, details }) => [label, value, details]), [
+      ["Saudi Population (2024)", "2,126,538", ["Age Group: 0–4", "Year: 2024", "Region ID: 1001", "ContactID: 90001", "RegionCode: 1001", "Description: 2024"]],
+      ["Non-Saudi Population (2024)", "378,651", ["Age Group: 0–4", "Year: 2024", "Region ID: 1001", "ContactID: 90001", "RegionCode: 1001", "Description: 2024"]],
+      ["Saudi Population (2024)", "1,998,200", ["Age Group: 5–9", "Year: 2024", "Region ID: 1002", "ContactID: 90002", "RegionCode: 1002", "Description: 2025"]],
+      ["Non-Saudi Population (2024)", "402,190", ["Age Group: 5–9", "Year: 2024", "Region ID: 1002", "ContactID: 90002", "RegionCode: 1002", "Description: 2025"]],
+    ]);
+  });
+
   it("renders a standalone athlete total as a people metric", () => {
     const cards = parseResultCards("**Total Athletes:** 12,450", "### Total Athletes");
     assert.deepEqual(cards[0], {
@@ -66,6 +96,26 @@ describe("parseResultCards", () => {
       valueLabel: "",
       details: [],
     });
+  });
+
+  it("keeps entity directories as tables instead of treating IDs and years as metrics", () => {
+    const markdown = [
+      "| Sport | Federation Membership Id | ContactID | Federation | Status | Registration Year |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| Table Tennis | Not specified | 123456 | Saudi Table Tennis Federation | Active | 2026 |",
+    ].join("\n");
+    assert.equal(parseResultCards(markdown, "Affiliated individuals"), null);
+  });
+
+  it("prefers the numeric metric over an earlier textual federation or ID column", () => {
+    const cards = parseResultCards([
+      "| Sport | Federation | ContactID | Registration Count |",
+      "| --- | --- | --- | ---: |",
+      "| Table Tennis | Saudi Table Tennis Federation | 123456 | 46 |",
+    ].join("\n"));
+    assert.equal(cards[0].value, "46");
+    assert.equal(cards[0].valueLabel, "Registration Count");
+    assert.deepEqual(cards[0].details, ["Federation: Saudi Table Tennis Federation", "ContactID: 123456"]);
   });
 
   it("preserves exact decimal precision and a valid zero", () => {

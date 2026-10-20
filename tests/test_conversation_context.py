@@ -85,6 +85,24 @@ class PendingSelectionTests(unittest.TestCase):
             "population_estimates_statistics_view_01": "Show population by age group for 2024",
         })
 
+    def test_numbered_source_choices_beyond_three_are_selectable(self):
+        context = {"pending": {"kind": "views", "question": "Show reporting totals", "options": [
+            {"view_id": "nsp_base_view_01"}, {"view_id": "sopc_view_01"},
+            {"view_id": "population_estimates_statistics_view_01"}, {"view_id": "budget_view_01"},
+        ]}}
+        for reply in ("4", "٤"):
+            self.assertEqual(resolve_pending_selection(reply, context)["view_ids"], ["budget_view_01"])
+
+    def test_field_reply_preserves_entity_name_but_new_question_routes_independently(self):
+        context = {"pending": {"kind": "details", "question": "List members of a club", "options": [
+            {"view_id": "nsp_base_view_01"},
+        ], "clarification": "Which club?"}}
+        for reply in ("Al Hilal", "both", "الهلال"):
+            resolved = resolve_pending_selection(reply, context)
+            self.assertIn(f"User reply: {reply}", resolved["question"])
+            self.assertEqual(resolved["view_ids"], ["nsp_base_view_01"])
+        self.assertIsNone(resolve_pending_selection("How many registered clubs are there?", context))
+
     def test_short_follow_up_reuses_completed_authorized_sources(self):
         context = {"pending": None, "last_question": "Show registrations by sport for 2023",
                    "view_ids": ["nsp_base_view_01", "sopc_view_01"]}
@@ -155,6 +173,29 @@ class FollowUpIntentTests(unittest.TestCase):
 
 
 class QueryPlanContextTests(unittest.TestCase):
+    def test_missing_filter_reply_keeps_question_and_clarification(self):
+        from app import ConversationContext
+
+        question = "List individuals affiliated with a specific club or federation"
+        clarification = "Which club or federation should I use?"
+        with (
+            patch("view_router.route_question", return_value=RouteResult(source_id="nsp_base_view_01")) as route,
+            patch("gemini_service.generate_sql", side_effect=[
+                f"CLARIFICATION: {clarification}", "SELECT 1",
+            ]) as generate,
+        ):
+            initial = generate_query_plan(question)
+            context = ConversationContext.model_validate(initial.conversation_context)
+            self.assertEqual(context.pending.kind, "details")
+            follow_up = generate_query_plan("both", conversation_context=context)
+
+        route.assert_called_once()
+        forwarded_question = generate.call_args.args[0]
+        self.assertIn(question, forwarded_question)
+        self.assertIn(clarification, forwarded_question)
+        self.assertIn("both", forwarded_question)
+        self.assertEqual(follow_up.queries, (("nsp_base_view_01", "SELECT 1"),))
+
     def test_unsupported_source_year_keeps_atomic_plan_and_original_selection(self):
         from view_catalog import get_view
 
@@ -208,7 +249,10 @@ class QueryPlanContextTests(unittest.TestCase):
                 self.assertIn(source.display_name, plan.clarification)
                 self.assertIn(clarification, plan.clarification)
                 self.assertEqual(plan.clarification_source_position, blocked_index + 1)
-                self.assertEqual(plan.conversation_context, context)
+                self.assertEqual(plan.conversation_context, {
+                    **context,
+                    "pending": {**context["pending"], "kind": "details", "clarification": clarification},
+                })
 
     def test_structured_gemini_candidates_round_trip_provide_for_all_without_rerouting(self):
         from view_catalog import ApprovedTable, get_view
@@ -286,7 +330,13 @@ class QueryPlanContextTests(unittest.TestCase):
         ):
             plan = generate_query_plan("all", conversation_context=context)
         route.assert_not_called()
-        self.assertEqual(plan.conversation_context, context)
+        self.assertEqual(plan.conversation_context, {
+            **context,
+            "pending": {
+                **context["pending"], "kind": "details",
+                "clarification": "Please confirm the region definition.",
+            },
+        })
         self.assertEqual(plan.queries, ())
 
     def test_both_years_generate_source_specific_questions(self):

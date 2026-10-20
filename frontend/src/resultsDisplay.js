@@ -28,14 +28,39 @@ const SPORT_ICONS = [
   [/gymnast|جمباز/iu, "🤸"],
 ];
 
-const LABEL_HEADER = /sport|discipline|athlete|participant|name|region|city|club|country|nationality|gender|category|الرياضة|رياضي|لاعب|اسم|منطقة|مدينة|نادي|جنسية|جنس|فئة/iu;
+const LABEL_HEADER = /sport|discipline|athlete|participant|age.?group|name|region|city|club|country|nationality|gender|category|الرياضة|رياضي|لاعب|اسم|فئة عمرية|منطقة|مدينة|نادي|جنسية|جنس|فئة/iu;
 const METRIC_HEADER = /rank|position|count|total|registration|score|percent|number|amount|federation|athlete|ترتيب|مركز|عدد|إجمالي|تسجيل|نتيجة|اتحاد|رياضي/iu;
+const DIMENSION_HEADER = /(?:^|[\s_-])(?:id|identifier|key|code|year|age|region|gender|nationality|name|category|type|status|date|month|quarter|group|district|city|country|description|comment|note)(?:$|[\s_-])|(?:id|identifier|key|code)$/iu;
+const IDENTIFIER_HEADER = /(?:^|[\s_-])(?:id|identifier|key|code)(?:$|[\s_-])|(?:id|identifier|key|code)$/iu;
+const METRIC_SUFFIX = /^(?:final|total|count|number|amount|value|sum|rate|score|metric)$/iu;
+
+function isNumericValue(value) {
+  return /^[+-]?(?:\d{1,3}(?:[,٬]\d{3})+|\d+)(?:[.٫]\d+)?%?$/u.test(value.trim())
+    || /^[+-]?[٠-٩۰-۹]+(?:[٫٬][٠-٩۰-۹]+)*%?$/u.test(value.trim());
+}
+
+function metricCardLabel(header, context) {
+  const words = cleanMarkdown(header).replace(/_/g, " ").split(/\s+/u).filter(Boolean);
+  const year = words.find((word) => /^(?:19|20)\d{2}$/u.test(word));
+  const category = words.filter((word) => !/^(?:19|20)\d{2}$/u.test(word) && !METRIC_SUFFIX.test(word));
+  const contextTerms = cleanMarkdown(context)
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/u)
+    .filter((word) => word && !/^(?:view|views|statistics|statistic|estimate|estimates|data|result|results|by|the|for)$/iu.test(word))
+    .filter((word) => !category.some((item) => item.toLocaleLowerCase() === word.toLocaleLowerCase()));
+  const titleCase = (word) => /^\p{Lu}/u.test(word) ? word : word.charAt(0).toLocaleUpperCase() + word.slice(1);
+  return [
+    ...category.map(titleCase),
+    ...contextTerms.map(titleCase),
+    ...(year ? [`(${year})`] : []),
+  ].join(" ");
+}
 
 function cleanMarkdown(value) {
   return value
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[*_`~]/g, "")
-    .replace(/\\([\\`*_{}\[\]()#+\-.!])/g, "$1")
+    .replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -110,29 +135,49 @@ function parseTable(markdown, context) {
   if (rows.length < 2) return null;
 
   const [headers, ...dataRows] = rows;
-  const labelIndex = headers.findIndex((header) => LABEL_HEADER.test(header));
+  const labelIndex = headers.findIndex((header) => LABEL_HEADER.test(header) && !IDENTIFIER_HEADER.test(header));
   const resolvedLabelIndex = labelIndex === -1 ? 0 : labelIndex;
+  if (dataRows.some((cells) => !headers.some((header, index) => (
+    index !== resolvedLabelIndex && !DIMENSION_HEADER.test(header) && isNumericValue(cells[index] || "")
+  )))) return null;
 
-  return dataRows.map((cells) => {
+  return dataRows.flatMap((cells) => {
     const values = headers.map((header, index) => ({
       header,
       value: cells[index] || "",
       index,
     })).filter(({ value, index }) => index !== resolvedLabelIndex && value);
-    const metric = values.find(({ header }) => METRIC_HEADER.test(header))
-      || values.find(({ value }) => /^[\d٠-٩۰-۹,٬.%+-]+$/u.test(value))
-      || values[0];
+    const metricColumns = values.filter(({ header, value }) => (
+      !DIMENSION_HEADER.test(header) && isNumericValue(value)
+    ));
+    if (metricColumns.length > 1) {
+      const metricIndexes = new Set(metricColumns.map(({ index }) => index));
+      const sharedDetails = [
+        ...(cells[resolvedLabelIndex] ? [`${headers[resolvedLabelIndex]}: ${cells[resolvedLabelIndex]}`] : []),
+        ...values
+        .filter(({ index }) => !metricIndexes.has(index))
+        .map(({ header, value }) => `${header}: ${value}`),
+      ];
+      return metricColumns.map(({ header, value }) => makeCard(
+        metricCardLabel(header, context),
+        value,
+        "",
+        sharedDetails,
+        `${context} ${headers.join(" ")}`,
+      ));
+    }
+    const metric = metricColumns.find(({ header }) => METRIC_HEADER.test(header)) || metricColumns[0];
     const details = values
       .filter(({ index }) => !metric || index !== metric.index)
       .map(({ header, value }) => `${header}: ${value}`);
 
-    return makeCard(
+    return [makeCard(
       cells[resolvedLabelIndex] || "Not specified",
       metric?.value || "",
       metric?.header || "",
       details,
       `${context} ${headers.join(" ")}`,
-    );
+    )];
   });
 }
 

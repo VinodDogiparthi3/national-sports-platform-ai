@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 
 from config import MODEL
@@ -99,10 +100,24 @@ def parse_route(payload, no_match_message: str, *, sources=None, language: str =
             return RouteResult(clarification=no_match_message)
         candidates.append(source)
     if len(candidates) > 1:
-        options = "; ".join(sanitize_metadata_text(source.display_name) for source in candidates)
+        labels = []
+        for source in candidates:
+            label = sanitize_metadata_text(source.display_name)
+            if re.match(r"^(?:ldv|ntw|idv)_", label, flags=re.IGNORECASE):
+                label = re.sub(r"^(?:ldv|ntw|idv)_", "", label, flags=re.IGNORECASE)
+                label = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", label)
+                label = re.sub(r"(?i)(?<=[a-z])(requests|directories|licenses)$", r" \1", label)
+                label = label.replace("_", " ").title()
+            labels.append(label)
+        options = "; ".join(f"{index}. {label}" for index, label in enumerate(labels, start=1))
         base = "أي مصدر تريد استخدامه؟" if language == "ar" else "Which source should I use?"
+        guidance = (
+            "اختر رقم المصدر، أو اكتب «الكل» لعرض نتائج منفصلة لكل مصدر."
+            if language == "ar"
+            else 'Choose a source number, or reply "all" or "both" for separate results from each source.'
+        )
         return RouteResult(
-            clarification=f"{base} ({options})",
+            clarification=f"{base} ({options}) {guidance}",
             candidate_view_ids=tuple(source.source_id for source in candidates),
         )
 

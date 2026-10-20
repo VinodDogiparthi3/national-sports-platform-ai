@@ -112,9 +112,10 @@ class SelectionOption(BaseModel):
 
 
 class PendingSelection(BaseModel):
-    kind: Literal["views", "years"]
+    kind: Literal["views", "years", "details"]
     question: str = Field(max_length=4000)
     options: list[SelectionOption] = Field(max_length=10)
+    clarification: str | None = Field(default=None, max_length=4000)
 
 
 class ConversationContext(BaseModel):

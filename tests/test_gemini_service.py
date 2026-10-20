@@ -53,7 +53,11 @@ class GenerateSqlTests(unittest.TestCase):
             self.assertIn("regional breakdowns are not supported", get_view(source_id).description)
             self.assertEqual(plan.clarification_source_position, 1)
             self.assertIn("Population Estimates Statistics View", plan.clarification)
-            self.assertEqual(plan.conversation_context, context)
+            self.assertEqual(plan.conversation_context["view_ids"], context["view_ids"])
+            self.assertEqual(plan.conversation_context["pending"]["question"], question)
+            self.assertEqual(plan.conversation_context["pending"]["options"], context["pending"]["options"])
+            self.assertEqual(plan.conversation_context["pending"]["kind"], "details")
+            self.assertIn("Regional breakdowns are not supported", plan.conversation_context["pending"]["clarification"])
             self.assertEqual(plan.queries, ())
             with self.assertRaises(OutOfScopeQueryError):
                 validate_sql(f"SELECT DISTINCT `region` FROM `{get_view(source_id).full_id}`")
@@ -119,6 +123,9 @@ class GenerateSqlTests(unittest.TestCase):
             f"return exactly: CLARIFICATION: {OUT_OF_SCOPE_CLARIFICATION}",
             prompt,
         )
+        self.assertIn("Do not describe a related request as unrelated", prompt)
+        self.assertIn("ask for its name", prompt)
+        self.assertIn("Directory, staff, committee, club, and affiliation requests", prompt)
 
     @patch("gemini_service.get_bigquery_schema", return_value="schema")
     @patch("gemini_service.client.models.generate_content")

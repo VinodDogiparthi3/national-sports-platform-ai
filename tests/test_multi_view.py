@@ -233,6 +233,18 @@ class CatalogTests(unittest.TestCase):
 
 
 class RouterParsingTests(unittest.TestCase):
+    def test_source_choices_use_readable_numbered_labels_and_selection_guidance(self):
+        sources = (
+            ApprovedTable("dw_nsp_api", "ldv_affiliationrequests", "ldv_affiliationrequests", "NSP", "Affiliation requests"),
+            ApprovedTable("dw_nsp_api", "ldv_federationrequests", "ldv_federationrequests", "NSP", "Federation requests"),
+        )
+        result = parse_route({"candidates": [source.source_id for source in sources]}, NO_MATCH, sources=sources)
+        self.assertIn("1. Affiliation Requests", result.clarification)
+        self.assertIn("2. Federation Requests", result.clarification)
+        self.assertIn('"both"', result.clarification)
+        self.assertNotIn("ldv_", result.clarification)
+        self.assertEqual(result.candidate_view_ids, tuple(source.source_id for source in sources))
+
     def test_population_view_is_not_recommended_for_region_requests(self):
         for question in ("total no.of regions and list of regions", "Population by region", "عدد المناطق وقائمة المناطق"):
             with self.subTest(question=question), patch("view_router.get_queryable_sources", return_value=APPROVED_VIEWS):

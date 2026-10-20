@@ -34,6 +34,37 @@ class StreamingAskTests(unittest.TestCase):
     def plan(self, sql):
         return QueryPlan(queries=(("nsp_base_view_01", sql),))
 
+    def test_missing_entity_clarification_round_trips_through_both_apis(self):
+        from view_router import RouteResult
+
+        question = "List individuals affiliated with a specific club or federation"
+        clarification = "Which club or federation should I use?"
+        for endpoint in ("/ask", "/ask/stream"):
+            with (
+                self.subTest(endpoint=endpoint),
+                patch("view_router.route_question", return_value=RouteResult(source_id="nsp_base_view_01")) as route,
+                patch("gemini_service.generate_sql", side_effect=[
+                    f"CLARIFICATION: {clarification}",
+                    "CLARIFICATION: Please provide the club and federation names.",
+                ]) as generate,
+                patch("app.is_metadata_question", return_value=False),
+                patch("app.execute_sql_batch") as execute,
+            ):
+                initial = self.client.post(endpoint, json={"question": question})
+                self.assertEqual(initial.status_code, 200)
+                if endpoint == "/ask":
+                    context = initial.json()["conversation_context"]
+                else:
+                    context = next(payload["conversation_context"] for event, payload in parse_events(initial.text) if event == "context")
+                self.assertEqual(context["pending"]["kind"], "details")
+                follow_up = self.client.post(endpoint, json={"question": "both", "conversation_context": context})
+                self.assertEqual(follow_up.status_code, 200)
+                self.assertIn(question, generate.call_args.args[0])
+                self.assertIn(clarification, generate.call_args.args[0])
+                self.assertIn("User reply: both", generate.call_args.args[0])
+                route.assert_called_once()
+                execute.assert_not_called()
+
     def test_legacy_population_region_selection_reports_limitation_without_model_or_execution(self):
         question = "total no.of regions and list of regions"
         source_ids = ["population_estimates_statistics_view_01", "nsp_base_view_01"]
@@ -66,7 +97,11 @@ class StreamingAskTests(unittest.TestCase):
                 self.assertEqual(events[-1][0], "done")
             self.assertIn("Population Estimates Statistics View", message)
             self.assertIn("Regional breakdowns are not supported" if language == "en" else "لا يدعم عدد المناطق", message)
-            self.assertEqual(retained, app.ConversationContext(**context).model_dump())
+            self.assertEqual(retained["view_ids"], source_ids)
+            self.assertEqual(retained["pending"]["kind"], "details")
+            self.assertEqual(retained["pending"]["question"], question)
+            self.assertEqual(retained["pending"]["options"], context["pending"]["options"])
+            self.assertIn("Regional breakdowns are not supported" if language == "en" else "لا يدعم عدد المناطق", retained["pending"]["clarification"])
 
     def test_one_source_clarification_blocks_entire_batch_before_validation_in_both_apis(self):
         question = "total no.of regions and list of regions"
@@ -112,7 +147,10 @@ class StreamingAskTests(unittest.TestCase):
                     self.assertIn(source.display_name, message)
                     self.assertIn(clarification, message)
                     self.assertIn("يلزم توضيح" if language == "ar" else "Clarification needed", message)
-                    self.assertEqual(retained, app.ConversationContext(**context).model_dump())
+                    self.assertEqual(retained, {
+                        **context,
+                        "pending": {**context["pending"], "kind": "details", "clarification": clarification},
+                    })
                     stages = [json.loads(record.getMessage()) for record in captured.records]
                     self.assertEqual([entry["stage"] for entry in stages], [
                         "received", "selection_checked", "planning_started", "clarification_sent",
