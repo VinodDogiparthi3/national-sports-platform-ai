@@ -334,6 +334,17 @@ class RegionFilterTests(unittest.TestCase):
         ):
             self.assertEqual(generate_sql("q", "en", "nsp_base_view_01"), sql)
 
+    def test_local_unavailable_filter_values_require_clarification(self):
+        sql = f"SELECT COUNT(*) FROM {self.TABLE} WHERE region = 'منطقة الرياض'"
+        with (
+            patch("gemini_service.get_bigquery_schema", return_value="schema"),
+            patch("gemini_service.get_filter_values", return_value=None),
+            patch("gemini_service.client.models.generate_content", return_value=SimpleNamespace(text=sql)),
+        ):
+            result = generate_sql("How many athletes are registered in Riyadh region?")
+        self.assertTrue(result.startswith("CLARIFICATION:"))
+        self.assertIn("stored values for region are unavailable in LOCAL mode", result)
+
     def test_other_views_are_not_checked(self):
         sql = "SELECT COUNT(*) FROM `p.d.fr_base_view_01` WHERE region = 'anything'"
         with (

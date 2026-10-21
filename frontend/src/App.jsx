@@ -10,6 +10,7 @@ import {
   resolveDownloadUrl,
 } from "./exportContext";
 import { parseResultCards, parseViewResults, splitResultsMarkdown } from "./resultsDisplay";
+import SqlPreview from "./SqlPreview";
 import { TIP_ROTATION_MS, nextTipIndex, stepState, waitingTips } from "./waitingTips";
 import {
   ArrowUpRight,
@@ -300,6 +301,7 @@ function App() {
     () => !window.matchMedia("(max-width: 820px)").matches,
   );
   const [apiStatus, setApiStatus] = useState("checking");
+  const [schemaProvider, setSchemaProvider] = useState(null);
   const [activeTopic, setActiveTopic] = useState(null);
   const [composerFocused, setComposerFocused] = useState(false);
   const [exampleIndex, setExampleIndex] = useState(0);
@@ -331,7 +333,11 @@ function App() {
         if (!response.ok) throw new Error("API unavailable");
         return response.json();
       })
-      .then(() => active && setApiStatus("connected"))
+      .then((health) => {
+        if (!active) return;
+        setApiStatus("connected");
+        setSchemaProvider(health.schema_provider === "LOCAL" ? "LOCAL" : "CLIENT_GCP");
+      })
       .catch(() => active && setApiStatus("offline"));
     return () => {
       active = false;
@@ -555,6 +561,7 @@ function App() {
       let conversationContext = null;
       let sources = [];
       let viewResults = [];
+      let sqlPreview = null;
       const updateAssistant = (updates) => {
         setMessages((current) => current.map((message) =>
           message.id === assistantId ? { ...message, ...updates } : message,
@@ -578,6 +585,10 @@ function App() {
         if (event === "view_result") {
           viewResults = [...viewResults, payload];
           updateAssistant({ viewResults });
+        }
+        if (event === "sql_preview") {
+          sqlPreview = payload;
+          updateAssistant({ sqlPreview: payload });
         }
         if (event === "token") {
           streamedText += payload.text;
@@ -610,6 +621,7 @@ function App() {
         ...(sources.length === 1 ? { source: sources[0] } : {}),
         ...(sources.length > 1 ? { sources } : {}),
         ...(viewResults.length ? { viewResults } : {}),
+        ...(sqlPreview ? { sqlPreview } : {}),
       };
       const updatedMessages = [...finalUserMessages, assistantMessage];
       setMessages(updatedMessages);
@@ -915,10 +927,12 @@ function App() {
                       ? parseResultCards(resultSections.results, resultSections.summary)
                       : null;
 
-                    return <div className={`message-content ${resultSections ? "has-results" : ""}`}>
+                    return <div className={`message-content ${resultSections || message.sqlPreview ? "has-results" : ""}`}>
                     <span className="message-author">{message.role === "user" ? ui.you : ui.assistant}</span>
                     <div className={`message-bubble ${message.role} ${message.error ? "has-error" : ""}`} dir="auto">
-                      {message.role === "assistant" && message.streaming && !message.text ? (
+                      {message.role === "assistant" && message.sqlPreview ? (
+                        <SqlPreview preview={message.sqlPreview} language={language} />
+                      ) : message.role === "assistant" && message.streaming && !message.text ? (
                         <div className="thinking-indicator" role="status" aria-live="polite">
                           <span /><span /><span />
                           <p>{ui.processingSteps[processingStatusIndex[message.status] ?? 0]}</p>
@@ -1028,7 +1042,7 @@ function App() {
                       {message.role === "assistant" && message.streaming && message.text && (
                         <span className="stream-cursor" aria-hidden="true" />
                       )}
-                      {message.role === "assistant" && message.export?.download_url && (
+                      {message.role === "assistant" && schemaProvider === "CLIENT_GCP" && message.export?.download_url && (
                         <a
                           className="export-download"
                           href={resolveDownloadUrl(API_BASE_URL, message.export.download_url)}

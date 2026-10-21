@@ -6,12 +6,16 @@ import time
 from google.cloud import bigquery
 
 from bigquery_catalog import CatalogUnavailableError, DiscoveredSource, discover_project_catalog
+from bigquery_access import require_bigquery_access
 from config import (
     BIGQUERY_DYNAMIC_ALLOWED_DATASETS,
     BIGQUERY_DYNAMIC_CATALOG_ENABLED,
     BIGQUERY_DYNAMIC_ROUTING_ENABLED,
     BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES,
     BIGQUERY_PROJECT_ID,
+    SCHEMA_PROVIDER,
+    PERSONAL_GCP_ALLOWED_DATASETS,
+    get_bigquery_client_kwargs,
 )
 
 DEFAULT_VIEW_ID = "nsp_base_view_01"
@@ -243,13 +247,19 @@ def clear_table_cache() -> None:
 
 def get_approved_tables() -> tuple[ApprovedTable, ...]:
     """Discover physical tables; discovery alone does not authorize query access."""
+    if SCHEMA_PROVIDER == "LOCAL":
+        return _static_authorized_tables()
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        return tuple(table for table in _static_authorized_tables()
+                     if table.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS)
+    require_bigquery_access("approved table catalog discovery")
     global _table_cache
     with _table_cache_lock:
         cached = _table_cache
         if cached and time.monotonic() - cached[0] < _TABLE_CACHE_TTL_SECONDS:
             return cached[1]
 
-    client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
+    client = bigquery.Client(**get_bigquery_client_kwargs())
     tables = []
     for dataset, (domain, description) in APPROVED_TABLE_DATASETS.items():
         try:
@@ -274,8 +284,23 @@ def get_approved_tables() -> tuple[ApprovedTable, ...]:
     return result
 
 
+def _static_authorized_tables() -> tuple[ApprovedTable, ...]:
+    return tuple(
+        ApprovedTable(
+            dataset=dataset,
+            table=table_name,
+            display_name=table_name,
+            domain=APPROVED_TABLE_DATASETS[dataset][0],
+            description=APPROVED_TABLE_DATASETS[dataset][1],
+        )
+        for dataset, table_names in AUTHORIZED_TABLES.items()
+        for table_name in sorted(table_names)
+    )
+
+
 def get_discovered_sources(*, force_refresh: bool = False) -> tuple[DiscoveredSource, ...]:
     """Return project-wide metadata inventory; these objects are not query authorization."""
+    require_bigquery_access("discovered source catalog access")
     if not BIGQUERY_DYNAMIC_CATALOG_ENABLED:
         return ()
     return discover_project_catalog(force_refresh=force_refresh).sources
@@ -283,6 +308,7 @@ def get_discovered_sources(*, force_refresh: bool = False) -> tuple[DiscoveredSo
 
 def get_dynamic_authorized_sources() -> tuple[DiscoveredSource, ...]:
     """Return only discovered objects covered by explicit dataset and column policies."""
+    require_bigquery_access("dynamic authorized source catalog access")
     if not BIGQUERY_DYNAMIC_CATALOG_ENABLED or not BIGQUERY_DYNAMIC_ROUTING_ENABLED:
         return ()
     if not BIGQUERY_DYNAMIC_ALLOWED_DATASETS or not BIGQUERY_DYNAMIC_SOURCE_COLUMN_POLICIES:
@@ -324,6 +350,7 @@ def get_dynamic_authorized_sources() -> tuple[DiscoveredSource, ...]:
 
 def get_authorized_tables() -> tuple[ApprovedTable, ...]:
     """Return discovered tables intersected with the explicit physical-table allowlist."""
+    require_bigquery_access("authorized table catalog access")
     authorized = AUTHORIZED_TABLES
     return tuple(
         table
@@ -334,15 +361,23 @@ def get_authorized_tables() -> tuple[ApprovedTable, ...]:
 
 def get_source(source_id: str) -> ApprovedView | ApprovedTable | DiscoveredSource | None:
     view = get_view(source_id)
+    if view and SCHEMA_PROVIDER == "PERSONAL_GCP" and view.dataset.casefold() not in PERSONAL_GCP_ALLOWED_DATASETS:
+        return None
     if view:
         return view
     normalized = (source_id or "").casefold()
     static_table = next(
-        (table for table in get_authorized_tables() if table.source_id.casefold() == normalized),
+        (table for table in _static_authorized_tables()
+         if table.source_id.casefold() == normalized
+         and (SCHEMA_PROVIDER != "PERSONAL_GCP" or table.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS))
+        if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}
+        else (table for table in get_authorized_tables() if table.source_id.casefold() == normalized),
         None,
     )
     if static_table:
         return static_table
+    if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}:
+        return None
     return next(
         (source for source in get_dynamic_authorized_sources() if source.source_id.casefold() == normalized),
         None,
@@ -351,11 +386,25 @@ def get_source(source_id: str) -> ApprovedView | ApprovedTable | DiscoveredSourc
 
 def get_queryable_sources() -> tuple[ApprovedView | ApprovedTable | DiscoveredSource, ...]:
     """Sources eligible for routing and SQL validation; discovery-only records are excluded."""
+    if SCHEMA_PROVIDER == "LOCAL":
+        return (*APPROVED_VIEWS, *_static_authorized_tables())
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        return (
+            *(view for view in APPROVED_VIEWS if view.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS),
+            *(table for table in _static_authorized_tables()
+              if table.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS),
+        )
     return (*APPROVED_VIEWS, *get_authorized_tables(), *get_dynamic_authorized_sources())
 
 
 def find_view(project: str, dataset: str, view: str) -> ApprovedView | None:
     found = get_view(view)
+    if (
+        found
+        and SCHEMA_PROVIDER == "PERSONAL_GCP"
+        and found.dataset.casefold() not in PERSONAL_GCP_ALLOWED_DATASETS
+    ):
+        return None
     if found and found.dataset.lower() == (dataset or "").lower() and found.project.lower() == (project or "").lower():
         return found
     return None

@@ -190,6 +190,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .source-details dt { opacity: .7; }
 .source-details dd { margin: 0; word-break: break-all; }
 .source-details pre { margin: 6px 0 0; padding: 8px 10px; overflow-x: auto; border-radius: 8px; background: var(--emerald-wash); white-space: pre-wrap; }
+.sql-preview { margin-top: 2px; padding: 12px; border: 1px solid #d7c58d; border-radius: 8px; background: #fffdf6; }
+.sql-preview-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: #34483c; }
+.sql-preview-status { padding: 3px 7px; border: 1px solid #b9974d; border-radius: 4px; color: #6c5018; background: #f8efd7; font-size: 10px; font-weight: 700; }
+.sql-preview-notice { margin: 9px 0; padding: 7px 9px; border-left: 3px solid #b9974d; color: #6c5018; background: #fbf4e3; font-size: 11px; font-weight: 600; }
+.sql-preview-metadata { margin: 8px 0; display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr); gap: 4px 10px; color: #59675e; font-size: 10px; }
+.sql-preview-metadata dt { color: #788078; }
+.sql-preview-metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.sql-preview-query { margin-top: 10px; }
+.sql-preview-query h4 { margin: 0 0 5px; color: #34483c; font-size: 11px; }
+.sql-preview-query pre { max-height: min(45vh, 360px); margin: 0; padding: 10px; overflow: auto; border: 1px solid #e4e1d3; border-radius: 6px; color: #283931; background: #f6f7f2; font-size: 11px; line-height: 1.55; white-space: pre; }
+.sql-preview-query code { padding: 0; color: inherit; background: transparent; font-size: inherit; }
 .export-download { margin-top: 10px; padding: 9px 14px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #c8dfd1; border-radius: 8px; color: var(--primary-deep); background: var(--emerald-wash); font-size: 12px; text-decoration: none; transition: background .16s ease, transform .16s ease; }
 .export-download:hover { background: #d9eadf; transform: translateY(-1px); }
 .thinking-indicator { display: flex; align-items: center; gap: 4px; min-height: 32px; color: #77847c; }

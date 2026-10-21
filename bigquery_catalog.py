@@ -8,7 +8,8 @@ import time
 
 from google.cloud import bigquery
 
-from config import BIGQUERY_CATALOG_CACHE_TTL_SECONDS, BIGQUERY_PROJECT_ID
+from bigquery_access import require_bigquery_access
+from config import BIGQUERY_CATALOG_CACHE_TTL_SECONDS, BIGQUERY_PROJECT_ID, get_bigquery_client_kwargs
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,7 @@ def _column_metadata(field) -> ColumnMetadata:
 
 
 def _fetch_object(client, dataset_id: str, item):
+    require_bigquery_access("object metadata lookup")
     source_id = f"{dataset_id}.{item.table_id}"
     try:
         table = client.get_table(item.reference)
@@ -162,13 +164,14 @@ def _fetch_object(client, dataset_id: str, item):
 
 def discover_project_catalog(*, force_refresh: bool = False) -> ProjectCatalog:
     """Discover metadata across the configured project; never reads table rows or executes SQL."""
+    require_bigquery_access("project catalog discovery")
     global _catalog_cache
     with _lock:
         cached = _catalog_cache
         if not force_refresh and cached and time.monotonic() - cached.refreshed_at < BIGQUERY_CATALOG_CACHE_TTL_SECONDS:
             return cached
 
-    client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
+    client = bigquery.Client(**get_bigquery_client_kwargs())
     try:
         datasets = sorted(client.list_datasets(project=BIGQUERY_PROJECT_ID), key=lambda dataset: dataset.dataset_id.casefold())
     except Exception as error:

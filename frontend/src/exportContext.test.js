@@ -160,6 +160,11 @@ describe("export context selection", () => {
     assert.equal(getLatestExportContext(messages), "results");
   });
 
+  it("does not reuse earlier export context after a LOCAL SQL preview", () => {
+    const messages = [assistant("1", "real-results"), { role: "assistant", sqlPreview: { status: "PREVIEW_ONLY" } }];
+    assert.equal(getLatestExportContext(messages), null);
+  });
+
   it("returns null for a conversation without results so the API asks which data to export", () => {
     assert.equal(getLatestExportContext([]), null);
     assert.equal(getLatestExportContext([{ id: "1", role: "user", text: "hi", exportContext: "ignored" }]), null);
@@ -211,6 +216,18 @@ describe("conversation context selection", () => {
       ], 12, "ar"),
       [{ role: "assistant", text: "الإجمالي: 13", is_result: true }],
     );
+  });
+
+  it("never marks a SQL preview as a result or carries an older context forward", () => {
+    const messages = [
+      { role: "assistant", text: "Actual results", conversationContext: { pending: null, last_question: "q", view_ids: ["nsp_base_view_01"] } },
+      { role: "assistant", text: "Validated SQL preview only", sqlPreview: { status: "PREVIEW_ONLY" } },
+    ];
+    assert.equal(getLatestConversationContext(messages), null);
+    assert.deepEqual(getConversationHistory(messages), [
+      { role: "assistant", text: "Actual results", is_result: true },
+      { role: "assistant", text: "Validated SQL preview only", is_result: false },
+    ]);
   });
 });
 

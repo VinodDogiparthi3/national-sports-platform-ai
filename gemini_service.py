@@ -7,17 +7,42 @@ import sqlglot
 from sqlglot import exp
 
 from bigquery_catalog import sanitize_metadata_text
-from config import PROJECT_ID, LOCATION, MODEL, BIGQUERY_TABLE_ID
+from config import (
+    BIGQUERY_TABLE_ID,
+    GEMINI_EFFECTIVE_PROJECT_ID,
+    LOCATION,
+    MODEL,
+    RUNTIME_PROFILE,
+    load_gemini_credentials,
+)
+from bigquery_access import require_gemini_access
 from conversation_context import history_payload, resolve_pending_selection
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
 from view_catalog import get_source, get_source_capability_limitation
 
 
-client = genai.Client(
-    vertexai=True,
-    project=PROJECT_ID,
-    location=LOCATION,
-)
+class _DisabledGeminiModels:
+    @staticmethod
+    def generate_content(*args, **kwargs):
+        require_gemini_access("inference")
+
+
+class _DisabledGeminiClient:
+    models = _DisabledGeminiModels()
+
+
+if RUNTIME_PROFILE == "PERSONAL_GCP":
+    client = _DisabledGeminiClient()
+else:
+    _client_kwargs = {
+        "vertexai": True,
+        "project": GEMINI_EFFECTIVE_PROJECT_ID,
+        "location": LOCATION,
+    }
+    _credentials = load_gemini_credentials()
+    if _credentials is not None:
+        _client_kwargs["credentials"] = _credentials
+    client = genai.Client(**_client_kwargs)
 
 OUT_OF_SCOPE_CLARIFICATIONS = {
     "en": (
@@ -381,6 +406,12 @@ def _check_filter_values(sql: str, view_id: str | None, language: str) -> str | 
         return None
 
     stored = get_filter_values(effective_view)
+    if stored is None:
+        for column, literal, _ in filters:
+            label_en, label_ar = columns[column]
+            if language == "ar":
+                return f"CLARIFICATION: لا تتوفر القيم المعتمدة لـ{label_ar} في الوضع المحلي. يرجى إدخال قيمة مخزنة معتمدة كما هي."
+            return f"CLARIFICATION: Approved stored values for {label_en} are unavailable in LOCAL mode. Please provide an exact approved stored value."
     for column, literal, is_pattern in filters:
         known = stored.get(column)
         if not known:

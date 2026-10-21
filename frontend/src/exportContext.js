@@ -2,6 +2,7 @@
 export function getLatestExportContext(messages) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+    if (message.role === "assistant" && message.sqlPreview) return null;
     if (message.role === "assistant" && message.exportContext) return message.exportContext;
   }
   return null;
@@ -10,6 +11,7 @@ export function getLatestExportContext(messages) {
 export function getLatestConversationContext(messages) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+    if (message.role === "assistant" && message.sqlPreview) return null;
     if (message.role === "assistant" && message.conversationContext) {
       return message.conversationContext;
     }
@@ -33,8 +35,10 @@ export function getConversationHistory(messages, limit = 12, language = "en") {
       role: message.role,
       text: (message.displayTranslations?.[language] || message.text).slice(0, 4000),
       is_result: message.role === "assistant" && Boolean(
-        message.exportContext
-        || (message.conversationContext?.last_question && message.conversationContext.pending == null)
+        !message.sqlPreview && (
+          message.exportContext
+          || (message.conversationContext?.last_question && message.conversationContext.pending == null)
+        )
       ),
     }));
 }

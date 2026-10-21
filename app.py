@@ -29,6 +29,8 @@ from config import (
     EXPORT_CONTEXT_TTL_SECONDS,
     EXPORT_DOWNLOAD_TTL_SECONDS,
     EXPORT_MAX_ROWS,
+    PERSONAL_GCP_EXECUTION_ENABLED,
+    SCHEMA_PROVIDER,
 )
 from excel_export import (
     XLSX_MEDIA_TYPE,
@@ -57,6 +59,7 @@ from gemini_service import (
 from sql_guardrails import validate_sql
 from view_catalog import find_source
 from conversation_context import is_explanation_request, previous_result_text, resolve_pending_selection, translation_target
+from schema_provider import SchemaNotFoundError, UnauthorizedSchemaSourceError
 
 
 # --------------------------------------------------
@@ -227,6 +230,21 @@ NO_PREVIOUS_RESULT_MESSAGES = {
     "ar": "لا توجد نتائج سابقة في هذه المحادثة لاستخدامها.",
 }
 
+LOCAL_SCHEMA_UNAVAILABLE_MESSAGES = {
+    "en": "I can't generate a preview because the selected source has no approved schema in the local backup. Please ask about an available approved source.",
+    "ar": "لا يمكنني إنشاء معاينة لأن المصدر المحدد لا يملك مخططًا معتمدًا في النسخة المحلية. يرجى السؤال عن مصدر معتمد متاح.",
+}
+
+LOCAL_PREVIEW_ONLY_MESSAGES = {
+    "en": "This LOCAL workspace only provides validated SQL previews. No query was executed, so there are no results to explain, translate, or export.",
+    "ar": "توفر مساحة LOCAL معاينات SQL معتمدة فقط. لم يتم تنفيذ أي استعلام، لذلك لا توجد نتائج لشرحها أو ترجمتها أو تصديرها.",
+}
+
+LOCAL_PREVIEW_NOTICE = {
+    "en": "No query executed; no results available.",
+    "ar": "لم يتم تنفيذ أي استعلام؛ لا توجد نتائج متاحة.",
+}
+
 BUDGET_EXCEEDED_MESSAGES = {
     "en": (
         "This request was blocked because its combined BigQuery estimate exceeds the 250 MiB limit. "
@@ -378,6 +396,17 @@ def _context_dict(context):
     return context.model_dump() if hasattr(context, "model_dump") else context
 
 
+def _planning_history(history):
+    return () if SCHEMA_PROVIDER == "LOCAL" else history
+
+
+def _planning_context(context):
+    if SCHEMA_PROVIDER != "LOCAL":
+        return context
+    data = _context_dict(context) or {}
+    return context if data.get("pending") else None
+
+
 def _log_query_stage(request_id: str, stage: str, *, context=None, selection=None, query_count: int = 0, reason: str | None = None, source_position: int | None = None):
     data = _context_dict(context) or {}
     pending = data.get("pending") or {}
@@ -403,6 +432,40 @@ def _source_records(queries):
         for _, sql in queries
         if (source := get_source_info(sql)) is not None
     ]
+
+
+def _local_sql_preview(safe_queries, language: str):
+    if not safe_queries:
+        raise ValueError("A SQL preview requires at least one validated query.")
+    preview_queries = []
+    authorized_source_ids = []
+    for planned_source_id, sql in safe_queries:
+        try:
+            tables = sqlglot.parse_one(sql, read="bigquery").find_all(exp.Table)
+        except Exception as error:
+            raise ValueError("Validated SQL could not be resolved to authorized sources.") from error
+        source_ids = []
+        for table in tables:
+            source = find_source(table.catalog or "", table.db or "", table.name or "")
+            if source is None:
+                raise ValueError("Validated SQL references an unauthorized source.")
+            if source.source_id not in source_ids:
+                source_ids.append(source.source_id)
+        if source_ids != [planned_source_id]:
+            raise ValueError("Validated SQL source does not match its authorized plan.")
+        preview_queries.append({"source_id": planned_source_id, "sql": sql})
+        if planned_source_id not in authorized_source_ids:
+            authorized_source_ids.append(planned_source_id)
+
+    from schema_metadata import get_local_schema_backup_metadata
+
+    return {
+        "status": "PREVIEW_ONLY",
+        "notice": LOCAL_PREVIEW_NOTICE[language],
+        "queries": preview_queries,
+        "authorized_source_ids": authorized_source_ids,
+        "schema_backup": get_local_schema_backup_metadata(),
+    }
 
 
 def _format_view_answer(view_id: str, answer: str) -> str:
@@ -433,6 +496,11 @@ def _excel_export_events(request: QuestionRequest, response_language: str):
     """Handle an Excel export request: reuse the previous validated query or run the one in the message."""
     messages = EXPORT_MESSAGES[response_language]
     done = _sse_event("done", {"question": request.question})
+
+    if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}:
+        yield _sse_event("token", {"text": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]})
+        yield done
+        return
 
     try:
         context = None
@@ -564,7 +632,8 @@ def root():
 @app.get("/health")
 def health():
     return {
-        "status": "healthy"
+        "status": "healthy",
+        "schema_provider": SCHEMA_PROVIDER,
     }
 
 
@@ -579,6 +648,8 @@ def version():
 
 @app.post("/translate/questions")
 def translate_questions(request: QuestionTranslationRequest):
+    if SCHEMA_PROVIDER == "PERSONAL_GCP" and not PERSONAL_GCP_EXECUTION_ENABLED:
+        raise HTTPException(status_code=503, detail="PERSONAL_GCP execution is disabled in this checkpoint.")
     if len(request.questions) > 50:
         raise HTTPException(
             status_code=400,
@@ -598,6 +669,8 @@ def translate_questions(request: QuestionTranslationRequest):
 
 @app.post("/translate/texts")
 def translate_chat_texts(request: TextTranslationRequest):
+    if SCHEMA_PROVIDER == "PERSONAL_GCP" and not PERSONAL_GCP_EXECUTION_ENABLED:
+        raise HTTPException(status_code=503, detail="PERSONAL_GCP execution is disabled in this checkpoint.")
     if len(request.texts) > 50:
         raise HTTPException(
             status_code=400,
@@ -619,6 +692,8 @@ def translate_chat_texts(request: TextTranslationRequest):
 
 @app.get("/exports/{token}")
 def download_excel_export(token: str):
+    if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}:
+        raise HTTPException(status_code=403, detail=LOCAL_PREVIEW_ONLY_MESSAGES["en"])
     try:
         payload = decrypt_token(token, EXPORT_DOWNLOAD_TTL_SECONDS, "download")
     except ExportTokenError:
@@ -671,6 +746,8 @@ def download_excel_export(token: str):
 
 @app.post("/ask")
 def ask(request: QuestionRequest):
+    if SCHEMA_PROVIDER == "PERSONAL_GCP" and not PERSONAL_GCP_EXECUTION_ENABLED:
+        raise HTTPException(status_code=503, detail="PERSONAL_GCP execution is disabled in this checkpoint.")
     request_id = uuid4().hex
     _log_query_stage(request_id, "received", context=request.conversation_context)
     try:
@@ -682,6 +759,14 @@ def ask(request: QuestionRequest):
                 "question": request.question,
                 "answer": greeting_response,
             }
+
+        if SCHEMA_PROVIDER == "LOCAL" and (
+            translation_target(request.question, response_language)
+            or is_explanation_request(request.question)
+        ):
+            return {"question": request.question, "answer": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]}
+        if SCHEMA_PROVIDER == "LOCAL" and is_excel_export_request(request.question):
+            return {"question": request.question, "answer": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]}
 
         previous_result = previous_result_text(request.conversation_history)
         target_language = translation_target(request.question, response_language)
@@ -701,7 +786,8 @@ def ask(request: QuestionRequest):
             )
             return {"question": request.question, "answer": answer}
 
-        selection = resolve_pending_selection(request.question, request.conversation_context)
+        planning_context = _planning_context(request.conversation_context)
+        selection = resolve_pending_selection(request.question, planning_context)
         _log_query_stage(request_id, "selection_checked", context=request.conversation_context, selection=selection)
         if not selection and is_metadata_question(request.question):
             _log_query_stage(request_id, "request_classified", reason="metadata_request")
@@ -712,12 +798,17 @@ def ask(request: QuestionRequest):
 
         # 1. Natural language -> BigQuery SQL
         _log_query_stage(request_id, "planning_started", selection=selection)
-        plan = generate_query_plan(
-            request.question,
-            response_language,
-            request.conversation_history,
-            request.conversation_context,
-        )
+        try:
+            plan = generate_query_plan(
+                request.question,
+                response_language,
+                _planning_history(request.conversation_history),
+                planning_context,
+            )
+        except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+            if SCHEMA_PROVIDER != "LOCAL":
+                raise
+            return {"question": request.question, "answer": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]}
 
         if plan.clarification:
             _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context,
@@ -732,6 +823,10 @@ def ask(request: QuestionRequest):
         # Validate every view query before any of them can execute.
         try:
             safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
+        except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+            if SCHEMA_PROVIDER != "LOCAL":
+                raise
+            return {"question": request.question, "answer": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]}
         except ValueError:
             context = _context_dict(request.conversation_context) or plan.conversation_context
             _log_query_stage(request_id, "validation_rejected", context=context, selection=selection,
@@ -741,6 +836,16 @@ def ask(request: QuestionRequest):
                 "answer": SQL_VALIDATION_MESSAGES[response_language],
                 **({"conversation_context": context} if context else {}),
             }
+
+        if SCHEMA_PROVIDER == "LOCAL":
+            try:
+                preview = _local_sql_preview(safe_queries, response_language)
+            except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+                return {"question": request.question, "answer": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]}
+            except Exception:
+                return {"question": request.question, "answer": SQL_VALIDATION_MESSAGES[response_language]}
+            _log_query_stage(request_id, "preview_ready", context=plan.conversation_context, query_count=len(safe_queries))
+            return {"question": request.question, "sql_preview": preview}
 
         _log_query_stage(request_id, "execution_requested", selection=selection, query_count=len(safe_queries))
         results = execute_sql_batch([sql for _, sql in safe_queries])
@@ -799,6 +904,9 @@ def ask_stream(request: QuestionRequest):
     request_id = uuid4().hex
 
     def event_stream():
+        if SCHEMA_PROVIDER == "PERSONAL_GCP" and not PERSONAL_GCP_EXECUTION_ENABLED:
+            yield _sse_event("error", {"message": "PERSONAL_GCP execution is disabled in this checkpoint."})
+            return
         _log_query_stage(request_id, "received", context=request.conversation_context)
         try:
             response_language = get_response_language(request.question, request.language)
@@ -808,6 +916,18 @@ def ask_stream(request: QuestionRequest):
             greeting_response = get_greeting_response(request.question, response_language)
             if greeting_response:
                 yield _sse_event("token", {"text": greeting_response})
+                yield _sse_event("done", {"question": request.question})
+                return
+
+            if SCHEMA_PROVIDER == "LOCAL" and (
+                translation_target(request.question, response_language)
+                or is_explanation_request(request.question)
+            ):
+                yield _sse_event("token", {"text": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
+            if SCHEMA_PROVIDER == "LOCAL" and is_excel_export_request(request.question):
+                yield _sse_event("token", {"text": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]})
                 yield _sse_event("done", {"question": request.question})
                 return
 
@@ -838,10 +958,15 @@ def ask_stream(request: QuestionRequest):
                 return
 
             if is_excel_export_request(request.question):
+                if SCHEMA_PROVIDER == "LOCAL":
+                    yield _sse_event("token", {"text": LOCAL_PREVIEW_ONLY_MESSAGES[response_language]})
+                    yield _sse_event("done", {"question": request.question})
+                    return
                 yield from _excel_export_events(request, response_language)
                 return
 
-            selection = resolve_pending_selection(request.question, request.conversation_context)
+            planning_context = _planning_context(request.conversation_context)
+            selection = resolve_pending_selection(request.question, planning_context)
             _log_query_stage(request_id, "selection_checked", context=request.conversation_context, selection=selection)
             if not selection and is_metadata_question(request.question):
                 _log_query_stage(request_id, "request_classified", reason="metadata_request")
@@ -850,12 +975,19 @@ def ask_stream(request: QuestionRequest):
                 return
 
             _log_query_stage(request_id, "planning_started", selection=selection)
-            plan = generate_query_plan(
-                request.question,
-                response_language,
-                request.conversation_history,
-                request.conversation_context,
-            )
+            try:
+                plan = generate_query_plan(
+                    request.question,
+                    response_language,
+                    _planning_history(request.conversation_history),
+                    planning_context,
+                )
+            except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+                if SCHEMA_PROVIDER != "LOCAL":
+                    raise
+                yield _sse_event("token", {"text": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
 
             if plan.clarification:
                 _log_query_stage(request_id, "clarification_sent", context=plan.conversation_context,
@@ -872,6 +1004,12 @@ def ask_stream(request: QuestionRequest):
 
             try:
                 safe_queries = [(view_id, validate_sql(sql)) for view_id, sql in plan.queries]
+            except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+                if SCHEMA_PROVIDER != "LOCAL":
+                    raise
+                yield _sse_event("token", {"text": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
             except ValueError:
                 context = _context_dict(request.conversation_context) or plan.conversation_context
                 _log_query_stage(request_id, "validation_rejected", context=context, selection=selection,
@@ -879,6 +1017,21 @@ def ask_stream(request: QuestionRequest):
                 if context:
                     yield _sse_event("context", {"conversation_context": context})
                 yield _sse_event("token", {"text": SQL_VALIDATION_MESSAGES[response_language]})
+                yield _sse_event("done", {"question": request.question})
+                return
+
+            if SCHEMA_PROVIDER == "LOCAL":
+                yield _sse_event("status", {"step": "analyzing"})
+                try:
+                    preview = _local_sql_preview(safe_queries, response_language)
+                except (SchemaNotFoundError, UnauthorizedSchemaSourceError):
+                    yield _sse_event("token", {"text": LOCAL_SCHEMA_UNAVAILABLE_MESSAGES[response_language]})
+                except Exception:
+                    yield _sse_event("token", {"text": SQL_VALIDATION_MESSAGES[response_language]})
+                else:
+                    _log_query_stage(request_id, "preview_ready", context=plan.conversation_context,
+                                     query_count=len(safe_queries))
+                    yield _sse_event("sql_preview", preview)
                 yield _sse_event("done", {"question": request.question})
                 return
 
