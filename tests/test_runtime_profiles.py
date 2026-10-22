@@ -11,7 +11,9 @@ PROFILE_VARIABLES = {
     "RUNTIME_PROFILE", "SCHEMA_PROVIDER", "CLIENT_GCP_PROJECT_ID", "PERSONAL_GCP_PROJECT_ID",
     "PERSONAL_GEMINI_PROJECT_ID", "PERSONAL_BIGQUERY_PROJECT_ID",
     "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE", "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE",
-    "PERSONAL_GCP_ALLOWED_DATASETS", "PERSONAL_GCP_DEFAULT_DATASET_ID",
+    "PERSONAL_GCP_ALLOWED_DATASETS", "PERSONAL_GCP_DATASET_MAPPINGS",
+    "PERSONAL_GCP_ALLOWED_TABLES", "PERSONAL_GCP_ALLOWED_VIEWS", "PERSONAL_GCP_ALLOWED_COLUMNS_JSON",
+    "PERSONAL_GCP_VIEW_DEFINITIONS_JSON", "PERSONAL_GCP_DEFAULT_DATASET_ID",
     "PERSONAL_GCP_DEFAULT_TABLE_ID", "PERSONAL_GCP_GEMINI_LOCATION",
     "PERSONAL_GCP_BIGQUERY_LOCATION", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION",
     "BIGQUERY_PROJECT_ID", "BIGQUERY_DATASET_ID", "BIGQUERY_TABLE_ID", "GEMINI_PROJECT_ID",
@@ -90,6 +92,11 @@ class RuntimeProfileTests(unittest.TestCase):
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
                 "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
                 "PERSONAL_GCP_ALLOWED_DATASETS": "dw_nsp_api_views",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_nsp_views":"dw_nsp_api_views"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"dw_nsp_api_views":["nsp_source"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{"dw_nsp_api_views":["nsp_base_view_01"]}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"dw_nsp_api_views.nsp_base_view_01":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}],"dw_nsp_api_views.nsp_source":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
+                "PERSONAL_GCP_VIEW_DEFINITIONS_JSON": '{"dw_nsp_api_views.nsp_base_view_01":"SELECT sport FROM `mos-gcp-host-dev-prj-512311.dw_nsp_api_views.nsp_source`"}',
                 "PERSONAL_GCP_DEFAULT_DATASET_ID": "dw_nsp_api_views",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID": "nsp_base_view_01",
                 "PERSONAL_GCP_GEMINI_LOCATION": "global",
@@ -98,7 +105,9 @@ class RuntimeProfileTests(unittest.TestCase):
             required = (
                 "PERSONAL_GCP_PROJECT_ID", "PERSONAL_GEMINI_PROJECT_ID", "PERSONAL_BIGQUERY_PROJECT_ID",
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE", "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE",
-                "PERSONAL_GCP_ALLOWED_DATASETS", "PERSONAL_GCP_DEFAULT_DATASET_ID",
+                "PERSONAL_GCP_ALLOWED_DATASETS", "PERSONAL_GCP_DATASET_MAPPINGS",
+                "PERSONAL_GCP_ALLOWED_TABLES", "PERSONAL_GCP_ALLOWED_COLUMNS_JSON",
+                "PERSONAL_GCP_DEFAULT_DATASET_ID",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID", "PERSONAL_GCP_GEMINI_LOCATION", "PERSONAL_GCP_BIGQUERY_LOCATION",
             )
             for variable in required:
@@ -108,6 +117,12 @@ class RuntimeProfileTests(unittest.TestCase):
                     expected_error = (
                         "must contain approved datasets"
                         if variable == "PERSONAL_GCP_ALLOWED_DATASETS"
+                        else "PERSONAL_GCP_DATASET_MAPPINGS is required"
+                        if variable == "PERSONAL_GCP_DATASET_MAPPINGS"
+                        else "must explicitly allow personal tables"
+                        if variable == "PERSONAL_GCP_ALLOWED_TABLES"
+                        else "PERSONAL_GCP_ALLOWED_COLUMNS_JSON is required"
+                        if variable == "PERSONAL_GCP_ALLOWED_COLUMNS_JSON"
                         else variable + " is required"
                     )
                     self.assertIn(expected_error, result.stderr)
@@ -127,6 +142,10 @@ class RuntimeProfileTests(unittest.TestCase):
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
                 "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
                 "PERSONAL_GCP_ALLOWED_DATASETS": "approved_reporting,approved_reference",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"approved_reporting","client_reference":"approved_reference"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"approved_reporting":["nsp_base_view_01"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"approved_reporting.nsp_base_view_01":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
                 "PERSONAL_GCP_DEFAULT_DATASET_ID": "approved_reporting",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID": "nsp_base_view_01",
                 "PERSONAL_GCP_GEMINI_LOCATION": "global",
@@ -137,6 +156,7 @@ class RuntimeProfileTests(unittest.TestCase):
                 "assert config.PROJECT_ID == 'mos-gcp-host-dev-prj-512311'; "
                 "assert config.GEMINI_EFFECTIVE_PROJECT_ID == 'mos-gcp-host-dev-prj-512311'; "
                 "assert config.BIGQUERY_PROJECT_ID == 'mos-gcp-host-dev-prj-512311'; "
+                "assert config.map_client_dataset_to_personal('client_reporting') == 'approved_reporting'; "
                 "assert config.BIGQUERY_DATASET_ID == 'approved_reporting'; "
                 "assert config.BIGQUERY_DYNAMIC_ALLOWED_DATASETS == {'approved_reporting', 'approved_reference'}; "
                 "assert config.GEMINI_CREDENTIALS_FILE != config.BIGQUERY_CREDENTIALS_FILE; "
@@ -147,6 +167,34 @@ class RuntimeProfileTests(unittest.TestCase):
                 settings,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_view_definition_rejects_client_project_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gemini_file = Path(directory, "gemini.credentials")
+            bigquery_file = Path(directory, "bigquery.credentials")
+            gemini_file.write_text("test fixture only", encoding="utf-8")
+            bigquery_file.write_text("test fixture only", encoding="utf-8")
+            settings = {
+                "RUNTIME_PROFILE": "PERSONAL_GCP",
+                "PERSONAL_GCP_PROJECT_ID": "mos-gcp-host-dev-prj-512311",
+                "PERSONAL_GEMINI_PROJECT_ID": "mos-gcp-host-dev-prj-512311",
+                "PERSONAL_BIGQUERY_PROJECT_ID": "mos-gcp-host-dev-prj-512311",
+                "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
+                "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
+                "PERSONAL_GCP_ALLOWED_DATASETS": "approved_reporting",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"approved_reporting"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"approved_reporting":["approved_table"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{"approved_reporting":["approved_view"]}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"approved_reporting.approved_table":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}],"approved_reporting.approved_view":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
+                "PERSONAL_GCP_VIEW_DEFINITIONS_JSON": '{"approved_reporting.approved_view":"SELECT sport FROM `mos-gcp-host-dev-prj.dw_nsp_api_views.nsp_base_view_01`"}',
+                "PERSONAL_GCP_DEFAULT_DATASET_ID": "approved_reporting",
+                "PERSONAL_GCP_DEFAULT_TABLE_ID": "approved_table",
+                "PERSONAL_GCP_GEMINI_LOCATION": "global",
+                "PERSONAL_GCP_BIGQUERY_LOCATION": "US",
+            }
+            result = run_python("import config", settings)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("approved personal-project datasets", result.stderr)
 
     def test_personal_profile_rejects_client_projects_ambient_adc_and_credential_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -163,6 +211,10 @@ class RuntimeProfileTests(unittest.TestCase):
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
                 "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
                 "PERSONAL_GCP_ALLOWED_DATASETS": "approved_reporting",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"approved_reporting"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"approved_reporting":["nsp_base_view_01"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"approved_reporting.nsp_base_view_01":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
                 "PERSONAL_GCP_DEFAULT_DATASET_ID": "approved_reporting",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID": "nsp_base_view_01",
                 "PERSONAL_GCP_GEMINI_LOCATION": "global",
@@ -176,6 +228,9 @@ class RuntimeProfileTests(unittest.TestCase):
                 ({"PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(REPOSITORY_ROOT / "config.py")}, "must not point inside the source repository"),
                 ({"PERSONAL_GCP_DEFAULT_DATASET_ID": "not_approved"}, "must be in PERSONAL_GCP_ALLOWED_DATASETS"),
                 ({"PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(gemini_file)}, "credential files must be distinct"),
+                ({"PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"approved_reporting","CLIENT_REPORTING":"approved_reporting"}'}, "duplicate client dataset IDs"),
+                ({"PERSONAL_GCP_DATASET_MAPPINGS": '{"client_a":"unmapped_personal_dataset"}'}, "targets must exactly match"),
+                ({"PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"other_personal_dataset"}'}, "targets must exactly match"),
             )
             for overrides, expected_error in invalid_overrides:
                 with self.subTest(overrides=overrides):
@@ -197,6 +252,10 @@ class RuntimeProfileTests(unittest.TestCase):
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
                 "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
                 "PERSONAL_GCP_ALLOWED_DATASETS": "approved_reporting",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_reporting":"approved_reporting"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"approved_reporting":["nsp_base_view_01"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"approved_reporting.nsp_base_view_01":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
                 "PERSONAL_GCP_DEFAULT_DATASET_ID": "approved_reporting",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID": "nsp_base_view_01",
                 "PERSONAL_GCP_GEMINI_LOCATION": "global",
@@ -234,6 +293,7 @@ class RuntimeProfileTests(unittest.TestCase):
                 "loader=loader_patch.start(); gemini_patch=patch('google.genai.Client'); gemini_client=gemini_patch.start(); "
                 "bigquery_patch=patch('google.cloud.bigquery.Client'); bigquery_client=bigquery_patch.start(); "
                 "import gemini_service, bigquery_database; "
+                "gemini_service.client._get_client(); bigquery_database.client.query('SELECT 1'); "
                 "assert gemini_client.call_args.kwargs['project']=='mos-gcp-host-dev-prj'; "
                 "assert gemini_client.call_args.kwargs['credentials'] is gemini_credentials; "
                 "assert bigquery_client.call_args.kwargs['project']=='mos-gcp-host-dev-prj'; "
@@ -258,6 +318,11 @@ class RuntimeProfileTests(unittest.TestCase):
                 "PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(gemini_file),
                 "PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(bigquery_file),
                 "PERSONAL_GCP_ALLOWED_DATASETS": "dw_nsp_api_views",
+                "PERSONAL_GCP_DATASET_MAPPINGS": '{"dw_nsp_api_views":"dw_nsp_api_views"}',
+                "PERSONAL_GCP_ALLOWED_TABLES": '{"dw_nsp_api_views":["nsp_source"]}',
+                "PERSONAL_GCP_ALLOWED_VIEWS": '{"dw_nsp_api_views":["nsp_base_view_01"]}',
+                "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": '{"dw_nsp_api_views.nsp_base_view_01":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}],"dw_nsp_api_views.nsp_source":[{"name":"sport","data_type":"STRING","nullability":"NULLABLE"}]}',
+                "PERSONAL_GCP_VIEW_DEFINITIONS_JSON": '{"dw_nsp_api_views.nsp_base_view_01":"SELECT sport FROM `mos-gcp-host-dev-prj-512311.dw_nsp_api_views.nsp_source`"}',
                 "PERSONAL_GCP_DEFAULT_DATASET_ID": "dw_nsp_api_views",
                 "PERSONAL_GCP_DEFAULT_TABLE_ID": "nsp_base_view_01",
                 "PERSONAL_GCP_GEMINI_LOCATION": "global",
@@ -273,6 +338,7 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('network 
                 import app
                 import bigquery_database
                 import gemini_service
+                import schema_metadata
                 import view_catalog
                 from view_catalog import find_source
                 from bigquery_access import BigQueryAccessDisabledError, GeminiAccessDisabledError
@@ -280,6 +346,16 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('network 
                 assert view_catalog.get_source('budget_view_01') is None
                 assert find_source('mos-gcp-host-dev-prj-512311', 'dw_sharepoint_views', 'budget_view_01') is None
                 assert view_catalog.get_source('nsp_base_view_01') is not None
+                prompt_schema = schema_metadata.get_bigquery_schema('nsp_base_view_01')
+                assert '`mos-gcp-host-dev-prj-512311.dw_nsp_api_views.nsp_base_view_01`' in prompt_schema
+                assert 'Client dataset(s) `dw_nsp_api_views` are explicitly mapped' in prompt_schema
+                for discovery in (view_catalog.get_discovered_sources, view_catalog.get_dynamic_authorized_sources):
+                    try:
+                        discovery()
+                    except BigQueryAccessDisabledError:
+                        pass
+                    else:
+                        raise AssertionError('PERSONAL_GCP catalog discovery was not blocked')
                 try:
                     bigquery_database.execute_sql('SELECT 1')
                 except BigQueryAccessDisabledError:

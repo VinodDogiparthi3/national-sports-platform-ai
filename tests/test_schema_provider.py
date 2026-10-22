@@ -144,7 +144,7 @@ class SchemaProviderConfigurationTests(unittest.TestCase):
                     [sys.executable, "-B", "-c", (
                         "from unittest.mock import patch; import google.genai; "
                         "p=patch('google.genai.Client'); mock=p.start(); import gemini_service; "
-                        "p.stop(); call=mock.call_args.kwargs; "
+                        "assert mock.call_count==0; gemini_service.client._get_client(); p.stop(); call=mock.call_args.kwargs; "
                         f"assert call['project']=={expected_project!r}; "
                         "assert call['vertexai'] is True; assert call['location']=='global'; "
                         "assert mock.call_count==1"

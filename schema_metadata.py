@@ -11,9 +11,12 @@ from config import (
     BIGQUERY_PROJECT_ID,
     BIGQUERY_TABLE_ID,
     LOCAL_SCHEMA_BACKUP_PATH,
+    PERSONAL_GCP_ALLOWED_COLUMNS,
+    RUNTIME_PROFILE,
     SCHEMA_PROVIDER,
     SCHEMA_CACHE_TTL_SECONDS,
     get_bigquery_client_kwargs,
+    map_personal_dataset_to_client,
 )
 from view_catalog import APPROVED_VIEWS, get_queryable_sources, get_source, get_view
 
@@ -64,7 +67,7 @@ def clear_schema_cache() -> None:
 
 
 def get_cached_source_columns(source) -> list[tuple[str, str, str]]:
-    if SCHEMA_PROVIDER == "LOCAL":
+    if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}:
         return get_view_columns(source.source_id)
     require_bigquery_access("cached source schema access")
     if getattr(source, "query_authorized", False):
@@ -81,6 +84,14 @@ def get_view_columns(view_id: str) -> list[tuple[str, str, str]]:
     source = get_source(view_id)
     if source is None:
         raise ValueError(f"Source is not approved: {view_id}")
+
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        source_identity = source.source_id if "." in source.source_id else f"{source.dataset}.{source.source_id}"
+        key = source_identity.casefold()
+        columns = PERSONAL_GCP_ALLOWED_COLUMNS.get(key)
+        if not columns:
+            raise ValueError(f"No explicitly approved personal schema is configured for {source.source_id}.")
+        return list(columns)
 
     if SCHEMA_PROVIDER == "LOCAL":
         schema = _get_local_schema_provider().get_schema(source.source_id)
@@ -111,6 +122,9 @@ def get_filter_values(view_id: str) -> dict[str, list[str]] | None:
     columns = FILTER_VALUE_COLUMNS.get(source.source_id.lower(), {}) if source else {}
     if not columns:
         return {}
+
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        return None
 
     if SCHEMA_PROVIDER == "LOCAL":
         return None
@@ -161,7 +175,7 @@ def get_all_view_columns() -> dict[str, list[tuple[str, str, str]]]:
 
 def get_all_source_columns() -> dict[str, list[tuple[str, str, str]]]:
     """Columns for approved views and explicitly authorized physical tables."""
-    if SCHEMA_PROVIDER == "LOCAL":
+    if SCHEMA_PROVIDER in {"LOCAL", "PERSONAL_GCP"}:
         sources = get_queryable_sources()
         return {source.source_id: get_view_columns(source.source_id) for source in sources}
     sources = get_queryable_sources()
@@ -186,7 +200,12 @@ def get_bigquery_schema(view_id: str | None = None) -> str:
     if source is None:
         raise ValueError(f"Source is not approved: {view_id}")
 
-    if SCHEMA_PROVIDER == "LOCAL":
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        personal_schema = get_view_columns(source.source_id)
+        description = sanitize_metadata_text(source.description)
+        view_columns = personal_schema
+        source_columns = {}
+    elif SCHEMA_PROVIDER == "LOCAL":
         local_schema = _get_local_schema_provider().get_schema(source.source_id)
         view_columns = [(column.name, column.data_type, column.nullability) for column in local_schema.columns]
         description = local_schema.table_description
@@ -209,6 +228,13 @@ def get_bigquery_schema(view_id: str | None = None) -> str:
             column_description = sanitize_metadata_text(column_description)
         columns.append(f"{name} {field_type} {mode}" + (f" - {column_description}" if column_description else ""))
     view_instructions = ""
+    if RUNTIME_PROFILE == "PERSONAL_GCP":
+        client_datasets = map_personal_dataset_to_client(source.dataset)
+        view_instructions += f"""
+Dataset mapping:
+    - Client dataset(s) {", ".join(f"`{dataset}`" for dataset in client_datasets)} are explicitly mapped to PERSONAL_GCP dataset `{source.dataset}`.
+- Generate SQL only against the fully qualified PERSONAL_GCP project and dataset shown above. Never reference the client project.
+"""
     if source.source_id == "nsp_base_view_01" and any(
         name.casefold() == "idv_classificationrecordid" for name, _, _ in view_columns
     ):

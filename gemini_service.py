@@ -7,6 +7,7 @@ import sqlglot
 from sqlglot import exp
 
 from bigquery_catalog import sanitize_metadata_text
+from bigquery_access import require_gemini_access
 from config import (
     BIGQUERY_TABLE_ID,
     GEMINI_EFFECTIVE_PROJECT_ID,
@@ -31,18 +32,36 @@ class _DisabledGeminiClient:
     models = _DisabledGeminiModels()
 
 
-if RUNTIME_PROFILE == "PERSONAL_GCP":
-    client = _DisabledGeminiClient()
-else:
-    _client_kwargs = {
-        "vertexai": True,
-        "project": GEMINI_EFFECTIVE_PROJECT_ID,
-        "location": LOCATION,
-    }
-    _credentials = load_gemini_credentials()
-    if _credentials is not None:
-        _client_kwargs["credentials"] = _credentials
-    client = genai.Client(**_client_kwargs)
+class _LazyGeminiModels:
+    def __init__(self, owner):
+        self._owner = owner
+
+    def generate_content(self, *args, **kwargs):
+        require_gemini_access("inference")
+        return self._owner._get_client().models.generate_content(*args, **kwargs)
+
+
+class _LazyGeminiClient:
+    def __init__(self):
+        self._client = None
+        self.models = _LazyGeminiModels(self)
+
+    def _get_client(self):
+        require_gemini_access("inference")
+        if self._client is None:
+            credentials = load_gemini_credentials()
+            kwargs = {
+                "vertexai": True,
+                "project": GEMINI_EFFECTIVE_PROJECT_ID,
+                "location": LOCATION,
+            }
+            if credentials is not None:
+                kwargs["credentials"] = credentials
+            self._client = genai.Client(**kwargs)
+        return self._client
+
+
+client = _DisabledGeminiClient() if RUNTIME_PROFILE == "PERSONAL_GCP" else _LazyGeminiClient()
 
 OUT_OF_SCOPE_CLARIFICATIONS = {
     "en": (

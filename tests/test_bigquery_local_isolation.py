@@ -98,8 +98,11 @@ with patch('google.cloud.bigquery.Client') as client:
     import bigquery_database
     assert config.SCHEMA_PROVIDER == 'CLIENT_GCP'
     assert config.BIGQUERY_PROJECT_ID == 'mos-gcp-host-dev-prj'
+    client.assert_not_called()
+    assert bigquery_database.client is not None
+    bigquery_database.client.query('SELECT 1')
     client.assert_called_once_with(project='mos-gcp-host-dev-prj')
-    assert bigquery_database.client is client.return_value
+    client.return_value.query.assert_called_once_with('SELECT 1')
 """
         result = run_isolated(code, schema_provider="CLIENT_GCP")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

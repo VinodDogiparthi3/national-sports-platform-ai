@@ -1,9 +1,26 @@
 from google.cloud import bigquery
+import threading
 
 from bigquery_access import require_bigquery_access
 from config import MAX_BYTES_PROCESSED, QUERY_TIMEOUT_SECONDS, RUNTIME_PROFILE, get_bigquery_client_kwargs
 
-client = bigquery.Client(**get_bigquery_client_kwargs()) if RUNTIME_PROFILE == "CLIENT_GCP" else None
+
+
+class _LazyBigQueryClient:
+    def __init__(self):
+        self._client = None
+        self._lock = threading.Lock()
+
+    def query(self, *args, **kwargs):
+        require_bigquery_access("query execution")
+        if self._client is None:
+            with self._lock:
+                if self._client is None:
+                    self._client = bigquery.Client(**get_bigquery_client_kwargs())
+        return self._client.query(*args, **kwargs)
+
+
+client = _LazyBigQueryClient() if RUNTIME_PROFILE == "CLIENT_GCP" else None
 
 
 class QueryBudgetExceeded(ValueError):

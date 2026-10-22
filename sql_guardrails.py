@@ -8,6 +8,9 @@ from config import (
 )
 from schema_metadata import get_view_columns
 from view_catalog import find_source, is_join_verified
+from config import SCHEMA_PROVIDER
+from sql_sources import resolved_table_references
+from sqlglot.optimizer.scope import Scope, traverse_scope
 
 
 ALLOWED_PROJECT = BIGQUERY_PROJECT_ID
@@ -65,9 +68,13 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
     # -------------------------
     # Validate table
     # -------------------------
-    tables = list(
-        expression.find_all(exp.Table)
-    )
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        try:
+            tables = list(resolved_table_references(sql))
+        except ValueError as error:
+            raise OutOfScopeQueryError(str(error)) from error
+    else:
+        tables = list(expression.find_all(exp.Table))
 
     if not tables:
         raise OutOfScopeQueryError(
@@ -120,6 +127,14 @@ def validate_sql(sql: str, row_limit: int | None = 100) -> str:
     # Collect SELECT aliases
     # -------------------------
     select_aliases = set()
+
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        for scope in traverse_scope(expression):
+            for source in scope.sources.values():
+                if isinstance(source, Scope):
+                    select_aliases.update(
+                        name.casefold() for name in source.expression.named_selects if name and name != "*"
+                    )
 
     for select_expression in expression.expressions:
 

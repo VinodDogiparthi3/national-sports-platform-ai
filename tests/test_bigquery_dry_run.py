@@ -1,18 +1,22 @@
-from gemini_service import generate_sql
-from sql_guardrails import validate_sql
+import unittest
+from unittest.mock import Mock, patch
+
 from bigquery_database import dry_run_sql
+from config import MAX_BYTES_PROCESSED
 
 
-question = "How many registrations are there for each sport?"
+class BigQueryDryRunTests(unittest.TestCase):
+	def test_dry_run_uses_query_cache_off_and_enforces_exact_cap(self):
+		query_job = Mock(total_bytes_processed=1024)
+		with patch("bigquery_database.client.query", return_value=query_job) as query:
+			estimate = dry_run_sql("SELECT 1")
 
-generated_sql = generate_sql(question)
-safe_sql = validate_sql(generated_sql)
+		self.assertEqual(estimate, 1024)
+		job_config = query.call_args.kwargs["job_config"]
+		self.assertTrue(job_config.dry_run)
+		self.assertFalse(job_config.use_query_cache)
+		self.assertEqual(MAX_BYTES_PROCESSED, 262_144_000)
 
-print("\nVALIDATED SQL:")
-print(safe_sql)
 
-bytes_processed = dry_run_sql(safe_sql)
-
-print("\nBIGQUERY DRY RUN: SUCCESS")
-print(f"Estimated bytes processed: {bytes_processed:,}")
-print(f"Estimated MB: {bytes_processed / (1024 * 1024):.2f}")
+if __name__ == "__main__":
+	unittest.main()

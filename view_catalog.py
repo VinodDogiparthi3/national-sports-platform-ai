@@ -15,6 +15,10 @@ from config import (
     BIGQUERY_PROJECT_ID,
     SCHEMA_PROVIDER,
     PERSONAL_GCP_ALLOWED_DATASETS,
+    PERSONAL_GCP_ALLOWED_TABLES,
+    PERSONAL_GCP_ALLOWED_VIEWS,
+    PERSONAL_GCP_DATASET_MAPPINGS,
+    PERSONAL_GCP_PROJECT_ID,
     get_bigquery_client_kwargs,
 )
 
@@ -224,7 +228,41 @@ VERIFIED_JOINS: tuple[frozenset[str], ...] = ()
 _BY_VIEW = {v.view.lower(): v for v in APPROVED_VIEWS}
 
 
+def _personal_approved_views() -> tuple[ApprovedView, ...]:
+    sources = []
+    for dataset, views in PERSONAL_GCP_ALLOWED_VIEWS.items():
+        for view_name in sorted(views):
+            sources.append(ApprovedView(
+                dataset=dataset,
+                view=view_name,
+                display_name=view_name,
+                domain="Approved personal reporting",
+                description="Explicitly approved personal-project view.",
+                project=PERSONAL_GCP_PROJECT_ID,
+            ))
+    return tuple(sources)
+
+
+def _personal_approved_tables() -> tuple[ApprovedTable, ...]:
+    sources = []
+    for dataset, table_names in PERSONAL_GCP_ALLOWED_TABLES.items():
+        sources.extend(
+            ApprovedTable(
+                dataset=dataset,
+                table=table_name,
+                display_name=table_name,
+                domain="Approved personal tables",
+                description="Explicitly approved personal-project table.",
+                project=PERSONAL_GCP_PROJECT_ID,
+            )
+            for table_name in sorted(table_names)
+        )
+    return tuple(sources)
+
+
 def get_view(view_id: str) -> ApprovedView | None:
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        return next((view for view in _personal_approved_views() if view.view.casefold() == (view_id or "").casefold()), None)
     return _BY_VIEW.get((view_id or "").lower())
 
 
@@ -250,8 +288,7 @@ def get_approved_tables() -> tuple[ApprovedTable, ...]:
     if SCHEMA_PROVIDER == "LOCAL":
         return _static_authorized_tables()
     if SCHEMA_PROVIDER == "PERSONAL_GCP":
-        return tuple(table for table in _static_authorized_tables()
-                     if table.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS)
+        return _personal_approved_tables()
     require_bigquery_access("approved table catalog discovery")
     global _table_cache
     with _table_cache_lock:
@@ -361,11 +398,11 @@ def get_authorized_tables() -> tuple[ApprovedTable, ...]:
 
 def get_source(source_id: str) -> ApprovedView | ApprovedTable | DiscoveredSource | None:
     view = get_view(source_id)
-    if view and SCHEMA_PROVIDER == "PERSONAL_GCP" and view.dataset.casefold() not in PERSONAL_GCP_ALLOWED_DATASETS:
-        return None
     if view:
         return view
     normalized = (source_id or "").casefold()
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        return next((table for table in _personal_approved_tables() if table.source_id.casefold() == normalized), None)
     static_table = next(
         (table for table in _static_authorized_tables()
          if table.source_id.casefold() == normalized
@@ -390,27 +427,30 @@ def get_queryable_sources() -> tuple[ApprovedView | ApprovedTable | DiscoveredSo
         return (*APPROVED_VIEWS, *_static_authorized_tables())
     if SCHEMA_PROVIDER == "PERSONAL_GCP":
         return (
-            *(view for view in APPROVED_VIEWS if view.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS),
-            *(table for table in _static_authorized_tables()
-              if table.dataset.casefold() in PERSONAL_GCP_ALLOWED_DATASETS),
+                        *_personal_approved_views(),
+                        *_personal_approved_tables(),
         )
     return (*APPROVED_VIEWS, *get_authorized_tables(), *get_dynamic_authorized_sources())
 
 
 def find_view(project: str, dataset: str, view: str) -> ApprovedView | None:
     found = get_view(view)
-    if (
-        found
-        and SCHEMA_PROVIDER == "PERSONAL_GCP"
-        and found.dataset.casefold() not in PERSONAL_GCP_ALLOWED_DATASETS
-    ):
-        return None
     if found and found.dataset.lower() == (dataset or "").lower() and found.project.lower() == (project or "").lower():
         return found
     return None
 
 
 def find_source(project: str, dataset: str, object_name: str) -> ApprovedView | ApprovedTable | DiscoveredSource | None:
+    if SCHEMA_PROVIDER == "PERSONAL_GCP":
+        if (
+            (project or "").casefold() != PERSONAL_GCP_PROJECT_ID.casefold()
+            or (dataset or "").casefold() not in PERSONAL_GCP_ALLOWED_DATASETS
+        ):
+            return None
+        view = find_view(project, dataset, object_name)
+        if view:
+            return view
+        return get_source(f"{dataset}.{object_name}")
     view = find_view(project, dataset, object_name)
     if view:
         return view

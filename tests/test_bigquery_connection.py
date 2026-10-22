@@ -1,28 +1,30 @@
-from google.cloud import bigquery
-
-from config import BIGQUERY_PROJECT_ID, BIGQUERY_DATASET_ID, BIGQUERY_TABLE_ID
-
-FULL_TABLE_ID = (
-    f"{BIGQUERY_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{BIGQUERY_TABLE_ID}"
-)
+import subprocess
+import sys
+import unittest
+from pathlib import Path
 
 
-client = bigquery.Client(project=BIGQUERY_PROJECT_ID)
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
-table = client.get_table(FULL_TABLE_ID)
 
-print("\nBIGQUERY CONNECTION: SUCCESS")
-print(f"Project : {BIGQUERY_PROJECT_ID}")
-print(f"Dataset : {BIGQUERY_DATASET_ID}")
-print(f"Table   : {BIGQUERY_TABLE_ID}")
+class BigQueryConnectionConfigurationTests(unittest.TestCase):
+    def test_import_is_inert_and_first_query_uses_explicit_client_project(self):
+        script = """
+from unittest.mock import patch
+import config
+import bigquery_database
+assert bigquery_database.client._client is None
+with patch('google.cloud.bigquery.Client') as client:
+    bigquery_database.client.query('SELECT 1')
+    client.assert_called_once_with(project=config.BIGQUERY_PROJECT_ID)
+"""
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", script], cwd=REPOSITORY_ROOT,
+            env={**__import__("os").environ, "RUNTIME_PROFILE": "CLIENT_GCP", "SCHEMA_PROVIDER": "CLIENT_GCP"},
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-print(f"\nNumber of columns: {len(table.schema)}")
 
-print("\nSCHEMA:")
-for field in table.schema:
-    print(
-        f"{field.name:40} "
-        f"{field.field_type:15} "
-        f"{field.mode}"
-    )
-print(f"Table type: {table.table_type}")
+if __name__ == "__main__":
+    unittest.main()
