@@ -2,7 +2,17 @@ from google.cloud import bigquery
 import threading
 
 from bigquery_access import require_bigquery_access
-from config import MAX_BYTES_PROCESSED, QUERY_TIMEOUT_SECONDS, RUNTIME_PROFILE, get_bigquery_client_kwargs
+from bigquery_dependencies import verify_personal_dry_run
+from config import (
+    BIGQUERY_JOB_LABELS,
+    BIGQUERY_JOB_LOCATION,
+    BIGQUERY_JOB_TIMEOUT_SECONDS,
+    MAX_BYTES_PROCESSED,
+    QUERY_TIMEOUT_SECONDS,
+    RUNTIME_PROFILE,
+    get_bigquery_client_kwargs,
+)
+from usage_limits import reserve_bigquery_job
 
 
 
@@ -27,18 +37,30 @@ class QueryBudgetExceeded(ValueError):
     pass
 
 
+def _job_config(**settings) -> bigquery.QueryJobConfig:
+    if BIGQUERY_JOB_TIMEOUT_SECONDS is not None:
+        settings["job_timeout_ms"] = BIGQUERY_JOB_TIMEOUT_SECONDS * 1000
+    return bigquery.QueryJobConfig(labels=dict(BIGQUERY_JOB_LABELS), **settings)
+
+
+def _submit_query(sql: str, job_config: bigquery.QueryJobConfig):
+    if BIGQUERY_JOB_LOCATION:
+        return client.query(sql, job_config=job_config, location=BIGQUERY_JOB_LOCATION)
+    return client.query(sql, job_config=job_config)
+
+
 def dry_run_sql(sql: str) -> int:
     require_bigquery_access("dry run")
 
-    job_config = bigquery.QueryJobConfig(
+    job_config = _job_config(
         dry_run=True,
         use_query_cache=False
     )
 
-    query_job = client.query(
-        sql,
-        job_config=job_config
-    )
+    query_job = _submit_query(sql, job_config)
+
+    if RUNTIME_PROFILE == "PERSONAL_GCP":
+        verify_personal_dry_run(sql, query_job)
 
     bytes_processed = (
         query_job.total_bytes_processed or 0
@@ -51,6 +73,7 @@ def dry_run_sql(sql: str) -> int:
             f"Estimated bytes: {bytes_processed}"
         )
 
+    reserve_bigquery_job(bytes_processed)
     return bytes_processed
 
 
@@ -69,11 +92,11 @@ def _preflight_sqls(sqls: list[str]) -> list[int]:
 
 def _execute_sql_after_dry_run(sql: str):
     require_bigquery_access("query execution")
-    job_config = bigquery.QueryJobConfig(
+    job_config = _job_config(
         maximum_bytes_billed=MAX_BYTES_PROCESSED,
         use_query_cache=True,
     )
-    query_job = client.query(sql, job_config=job_config)
+    query_job = _submit_query(sql, job_config)
     result = query_job.result(max_results=100, timeout=QUERY_TIMEOUT_SECONDS)
     columns = [field.name for field in result.schema]
     rows = [tuple(row.values()) for row in result]
@@ -101,15 +124,12 @@ def _run_export_query(sql: str, page_size: int):
     # Same byte guard as normal answers; the query cache makes the later download re-run cheap.
     dry_run_sql(sql)
 
-    job_config = bigquery.QueryJobConfig(
+    job_config = _job_config(
         maximum_bytes_billed=MAX_BYTES_PROCESSED,
         use_query_cache=True
     )
 
-    return client.query(
-        sql,
-        job_config=job_config
-    ).result(page_size=page_size, timeout=QUERY_TIMEOUT_SECONDS)
+    return _submit_query(sql, job_config).result(page_size=page_size, timeout=QUERY_TIMEOUT_SECONDS)
 
 
 def get_export_row_count(sql: str) -> int:
@@ -130,9 +150,9 @@ def get_export_row_counts(sqls: list[str]) -> list[int]:
         )
     row_counts = []
     for sql in sqls:
-        result = client.query(
+        result = _submit_query(
             sql,
-            job_config=bigquery.QueryJobConfig(
+            _job_config(
                 maximum_bytes_billed=MAX_BYTES_PROCESSED,
                 use_query_cache=True,
             ),
@@ -160,9 +180,9 @@ def stream_query_rows_batch(sqls: list[str], page_size: int = 10000):
     _preflight_sqls(sqls)
     sheets = []
     for sql in sqls:
-        result = client.query(
+        result = _submit_query(
             sql,
-            job_config=bigquery.QueryJobConfig(
+            _job_config(
                 maximum_bytes_billed=MAX_BYTES_PROCESSED,
                 use_query_cache=True,
             ),

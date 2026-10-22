@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 
 from google import genai
+from google.genai import types as genai_types
 import sqlglot
 from sqlglot import exp
 
@@ -11,6 +12,8 @@ from bigquery_access import require_gemini_access
 from config import (
     BIGQUERY_TABLE_ID,
     GEMINI_EFFECTIVE_PROJECT_ID,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    GEMINI_REQUEST_TIMEOUT_SECONDS,
     LOCATION,
     MODEL,
     RUNTIME_PROFILE,
@@ -19,6 +22,7 @@ from config import (
 from bigquery_access import require_gemini_access
 from conversation_context import history_payload, resolve_pending_selection
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
+from usage_limits import consume_gemini_call
 from view_catalog import get_source, get_source_capability_limitation
 
 
@@ -32,12 +36,27 @@ class _DisabledGeminiClient:
     models = _DisabledGeminiModels()
 
 
+def _bounded_generation_config(config):
+    if GEMINI_MAX_OUTPUT_TOKENS is None:
+        return config
+    if config is None:
+        return genai_types.GenerateContentConfig(max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS)
+    if isinstance(config, dict):
+        requested = config.get("max_output_tokens") or GEMINI_MAX_OUTPUT_TOKENS
+        return {**config, "max_output_tokens": min(requested, GEMINI_MAX_OUTPUT_TOKENS)}
+    requested = config.max_output_tokens or GEMINI_MAX_OUTPUT_TOKENS
+    return config.model_copy(update={"max_output_tokens": min(requested, GEMINI_MAX_OUTPUT_TOKENS)})
+
+
 class _LazyGeminiModels:
     def __init__(self, owner):
         self._owner = owner
 
     def generate_content(self, *args, **kwargs):
         require_gemini_access("inference")
+        consume_gemini_call()
+        if GEMINI_MAX_OUTPUT_TOKENS is not None:
+            kwargs["config"] = _bounded_generation_config(kwargs.get("config"))
         return self._owner._get_client().models.generate_content(*args, **kwargs)
 
 
@@ -57,6 +76,8 @@ class _LazyGeminiClient:
             }
             if credentials is not None:
                 kwargs["credentials"] = credentials
+            if GEMINI_REQUEST_TIMEOUT_SECONDS is not None:
+                kwargs["http_options"] = genai_types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_SECONDS * 1000)
             self._client = genai.Client(**kwargs)
         return self._client
 

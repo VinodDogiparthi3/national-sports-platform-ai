@@ -369,9 +369,11 @@ with patch.object(socket.socket, 'connect', side_effect=AssertionError('network 
                 else:
                     raise AssertionError('PERSONAL_GCP inference was not blocked')
                 from fastapi.testclient import TestClient
-                client = TestClient(app.app, raise_server_exceptions=False)
+                client = TestClient(app.app, raise_server_exceptions=False, client=('127.0.0.1', 50000))
                 response = client.post('/ask', json={'question': 'anything'})
                 assert response.status_code == 503
+                remote = TestClient(app.app, raise_server_exceptions=False, client=('203.0.113.10', 50000))
+                assert remote.post('/ask', json={'question': 'anything'}).status_code == 403
                 gemini_client.assert_not_called()
                 bigquery_client.assert_not_called()
                 connect.assert_not_called()

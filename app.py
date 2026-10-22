@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from google.api_core import exceptions as api_exceptions
 from google.genai import errors as genai_errors
 from sqlglot import exp
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -29,7 +29,10 @@ from config import (
     EXPORT_CONTEXT_TTL_SECONDS,
     EXPORT_DOWNLOAD_TTL_SECONDS,
     EXPORT_MAX_ROWS,
+    PERSONAL_GCP_ALLOW_REMOTE_CLIENTS,
+    PERSONAL_GCP_API_TOKEN,
     PERSONAL_GCP_EXECUTION_ENABLED,
+    PERSONAL_GCP_RATE_LIMIT_PER_MINUTE,
     SCHEMA_PROVIDER,
 )
 from excel_export import (
@@ -57,6 +60,8 @@ from gemini_service import (
     translate_questions_to_arabic,
 )
 from sql_guardrails import validate_sql
+from request_safety import RequestSafetyMiddleware
+from usage_limits import UsageLimitExceeded
 from view_catalog import find_source
 from conversation_context import is_explanation_request, previous_result_text, resolve_pending_selection, translation_target
 from schema_provider import SchemaNotFoundError, UnauthorizedSchemaSourceError
@@ -71,6 +76,21 @@ app = FastAPI(
     version="1.0.0",
 )
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
+
+
+@app.exception_handler(UsageLimitExceeded)
+async def usage_limit_exceeded(_request, error: UsageLimitExceeded):
+    return JSONResponse({"detail": str(error)}, status_code=429)
+
+
+# Added before CORS so CORS stays outermost and rejections still carry CORS headers.
+app.add_middleware(
+    RequestSafetyMiddleware,
+    enforce_personal_guard=SCHEMA_PROVIDER == "PERSONAL_GCP",
+    allow_remote_clients=PERSONAL_GCP_ALLOW_REMOTE_CLIENTS,
+    api_token=PERSONAL_GCP_API_TOKEN,
+    rate_limit_per_minute=PERSONAL_GCP_RATE_LIMIT_PER_MINUTE,
+)
 
 
 # --------------------------------------------------

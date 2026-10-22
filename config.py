@@ -129,6 +129,7 @@ PERSONAL_GCP_ALLOWED_TABLES: dict[str, frozenset[str]] = {}
 PERSONAL_GCP_ALLOWED_VIEWS: dict[str, frozenset[str]] = {}
 PERSONAL_GCP_ALLOWED_COLUMNS: dict[str, tuple[tuple[str, str, str], ...]] = {}
 PERSONAL_GCP_VIEW_DEFINITIONS: dict[str, str] = {}
+PERSONAL_GCP_VIEW_DEPENDENCY_CLOSURE: dict[str, frozenset[str]] = {}
 PERSONAL_GCP_PROJECT_ID: str | None = None
 PERSONAL_GEMINI_PROJECT_ID: str | None = None
 PERSONAL_BIGQUERY_PROJECT_ID: str | None = None
@@ -280,6 +281,7 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
 
     from sql_sources import resolved_table_references
     view_dependencies = {}
+    view_direct_tables = {}
     for view_id, definition in PERSONAL_GCP_VIEW_DEFINITIONS.items():
         try:
             references = resolved_table_references(definition)
@@ -288,6 +290,7 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
         if not references:
             raise ValueError("Personal view definitions must reference at least one approved personal source.")
         dependencies = []
+        direct_tables = []
         for table in references:
             project_id = (table.catalog or "").casefold()
             dataset_id = (table.db or "").casefold()
@@ -296,6 +299,7 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
                 raise ValueError("Personal view definitions must reference only approved personal-project datasets.")
             source_id = f"{dataset_id}.{object_id}"
             if object_id in PERSONAL_GCP_ALLOWED_TABLES.get(dataset_id, frozenset()):
+                direct_tables.append(source_id)
                 continue
             if object_id in PERSONAL_GCP_ALLOWED_VIEWS.get(dataset_id, frozenset()):
                 if source_id not in PERSONAL_GCP_VIEW_DEFINITIONS:
@@ -304,6 +308,7 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
                 continue
             raise ValueError("Personal view definitions reference a table or view outside the explicit allowlists.")
         view_dependencies[view_id] = tuple(dependencies)
+        view_direct_tables[view_id] = tuple(direct_tables)
 
     visiting_views = set()
     checked_views = set()
@@ -321,6 +326,17 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
 
     for view_id in view_dependencies:
         validate_view_dependencies(view_id)
+
+    def view_dependency_closure(view_id: str) -> frozenset[str]:
+        closure = set(view_direct_tables[view_id])
+        for dependency in view_dependencies[view_id]:
+            closure.add(dependency)
+            closure |= view_dependency_closure(dependency)
+        return frozenset(closure)
+
+    PERSONAL_GCP_VIEW_DEPENDENCY_CLOSURE = {
+        view_id: view_dependency_closure(view_id) for view_id in view_dependencies
+    }
 
     PERSONAL_GCP_DEFAULT_DATASET_ID = _required_profile_value("PERSONAL_GCP_DEFAULT_DATASET_ID")
     PERSONAL_GCP_DEFAULT_TABLE_ID = _required_profile_value("PERSONAL_GCP_DEFAULT_TABLE_ID")
@@ -438,6 +454,8 @@ def load_bigquery_credentials():
 
 def get_bigquery_client_kwargs() -> dict[str, object]:
     kwargs: dict[str, object] = {"project": BIGQUERY_PROJECT_ID}
+    if BIGQUERY_JOB_LOCATION:
+        kwargs["location"] = BIGQUERY_JOB_LOCATION
     credentials = load_bigquery_credentials()
     if credentials is not None:
         kwargs["credentials"] = credentials
@@ -490,6 +508,89 @@ if (
     )
 ):
     raise ValueError("Dynamic source policies must map source IDs to lists of column names.")
+
+
+# -------------------------
+# Execution safeguards
+# -------------------------
+
+def _positive_int_setting(name: str, default: int | None, maximum: int | None = None) -> int | None:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer.") from error
+    if value <= 0 or (maximum is not None and value > maximum):
+        limit = f" no greater than {maximum}" if maximum is not None else ""
+        raise ValueError(f"{name} must be a positive integer{limit}.")
+    return value
+
+
+_PERSONAL = RUNTIME_PROFILE == "PERSONAL_GCP"
+_BIGQUERY_LOCATION_PATTERN = r"[A-Za-z]{2,}(?:-[A-Za-z0-9]+)*"
+
+if _PERSONAL:
+    BIGQUERY_JOB_LOCATION = PERSONAL_GCP_BIGQUERY_LOCATION
+else:
+    # CLIENT_GCP/LOCAL send a job location only when one is configured explicitly.
+    BIGQUERY_JOB_LOCATION = (os.getenv("BIGQUERY_LOCATION") or "").strip() or None
+if BIGQUERY_JOB_LOCATION is not None and (
+    BIGQUERY_JOB_LOCATION.casefold() == "global"
+    or not re.fullmatch(_BIGQUERY_LOCATION_PATTERN, BIGQUERY_JOB_LOCATION)
+):
+    raise ValueError("The BigQuery location must be a BigQuery region or multi-region, not global.")
+
+PERSONAL_GCP_MAX_JOB_TIMEOUT_SECONDS = 60
+# CLIENT_GCP/LOCAL add server-side job cancellation only when explicitly configured.
+BIGQUERY_JOB_TIMEOUT_SECONDS = _positive_int_setting(
+    "BIGQUERY_JOB_TIMEOUT_SECONDS",
+    min(QUERY_TIMEOUT_SECONDS, PERSONAL_GCP_MAX_JOB_TIMEOUT_SECONDS) if _PERSONAL else None,
+    PERSONAL_GCP_MAX_JOB_TIMEOUT_SECONDS if _PERSONAL else None,
+)
+BIGQUERY_JOB_LABELS = {
+    "app": "nsp-ai",
+    "runtime-profile": RUNTIME_PROFILE.casefold().replace("_", "-"),
+}
+
+# Unset Gemini limits keep CLIENT_GCP/LOCAL behavior unchanged; PERSONAL_GCP is always bounded.
+GEMINI_MAX_OUTPUT_TOKENS = _positive_int_setting(
+    "GEMINI_MAX_OUTPUT_TOKENS", 4096 if _PERSONAL else None, 8192 if _PERSONAL else None,
+)
+GEMINI_REQUEST_TIMEOUT_SECONDS = _positive_int_setting(
+    "GEMINI_REQUEST_TIMEOUT_SECONDS", 60 if _PERSONAL else None, 300 if _PERSONAL else None,
+)
+GEMINI_MAX_CALLS_PER_REQUEST = _positive_int_setting(
+    "GEMINI_MAX_CALLS_PER_REQUEST", 8 if _PERSONAL else None, 20 if _PERSONAL else None,
+)
+
+# Per-process counters only: they reset on restart and are not shared across workers or instances.
+PERSONAL_GCP_MAX_GEMINI_CALLS_PER_PROCESS: int | None = None
+PERSONAL_GCP_MAX_BIGQUERY_JOBS_PER_PROCESS: int | None = None
+PERSONAL_GCP_MAX_BIGQUERY_BYTES_PER_PROCESS: int | None = None
+PERSONAL_GCP_ALLOW_REMOTE_CLIENTS = False
+PERSONAL_GCP_API_TOKEN: str | None = None
+PERSONAL_GCP_RATE_LIMIT_PER_MINUTE: int | None = None
+if _PERSONAL:
+    PERSONAL_GCP_MAX_GEMINI_CALLS_PER_PROCESS = _positive_int_setting(
+        "PERSONAL_GCP_MAX_GEMINI_CALLS_PER_PROCESS", 200, 1000,
+    )
+    PERSONAL_GCP_MAX_BIGQUERY_JOBS_PER_PROCESS = _positive_int_setting(
+        "PERSONAL_GCP_MAX_BIGQUERY_JOBS_PER_PROCESS", 100, 1000,
+    )
+    PERSONAL_GCP_MAX_BIGQUERY_BYTES_PER_PROCESS = _positive_int_setting(
+        "PERSONAL_GCP_MAX_BIGQUERY_BYTES_PER_PROCESS", 4 * HARD_MAX_BYTES_PROCESSED, 40 * HARD_MAX_BYTES_PROCESSED,
+    )
+    PERSONAL_GCP_ALLOW_REMOTE_CLIENTS = (
+        os.getenv("PERSONAL_GCP_ALLOW_REMOTE_CLIENTS", "false").strip().casefold() in {"1", "true", "yes"}
+    )
+    PERSONAL_GCP_API_TOKEN = (os.getenv("PERSONAL_GCP_API_TOKEN") or "").strip() or None
+    if PERSONAL_GCP_API_TOKEN is not None and len(PERSONAL_GCP_API_TOKEN) < 32:
+        raise ValueError("PERSONAL_GCP_API_TOKEN must contain at least 32 characters.")
+    if PERSONAL_GCP_ALLOW_REMOTE_CLIENTS and PERSONAL_GCP_API_TOKEN is None:
+        raise ValueError("PERSONAL_GCP_API_TOKEN is required when PERSONAL_GCP_ALLOW_REMOTE_CLIENTS is enabled.")
+    PERSONAL_GCP_RATE_LIMIT_PER_MINUTE = _positive_int_setting("PERSONAL_GCP_RATE_LIMIT_PER_MINUTE", 10, 120)
 
 
 # -------------------------
