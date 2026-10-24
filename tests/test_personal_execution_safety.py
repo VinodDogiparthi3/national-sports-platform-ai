@@ -66,14 +66,40 @@ class PersonalConfigTests(unittest.TestCase):
             "PERSONAL_GCP_BIGQUERY_LOCATION": "US",
         }
 
+    def execution_settings(self, **overrides):
+        settings = {
+            **self.personal,
+            "PERSONAL_GCP_ALLOWED_DATASETS": "nsp_ai_synthetic",
+            "PERSONAL_GCP_DATASET_MAPPINGS": '{"client_nsp_api_views":"nsp_ai_synthetic"}',
+            "PERSONAL_GCP_ALLOWED_TABLES": '{"nsp_ai_synthetic":["synthetic_athletes"]}',
+            "PERSONAL_GCP_ALLOWED_VIEWS": "{}",
+            "PERSONAL_GCP_VIEW_DEFINITIONS_JSON": "{}",
+            "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": (
+                '{"nsp_ai_synthetic.synthetic_athletes":['
+                '{"name":"synthetic_id","data_type":"STRING","nullability":"NULLABLE"},'
+                '{"name":"sport","data_type":"STRING","nullability":"NULLABLE"},'
+                '{"name":"age_years","data_type":"INT64","nullability":"NULLABLE"},'
+                '{"name":"category","data_type":"STRING","nullability":"NULLABLE"},'
+                '{"name":"country_label","data_type":"STRING","nullability":"NULLABLE"},'
+                '{"name":"association_label","data_type":"STRING","nullability":"NULLABLE"},'
+                '{"name":"registration_year","data_type":"INT64","nullability":"NULLABLE"}]}'
+            ),
+            "PERSONAL_GCP_DEFAULT_DATASET_ID": "nsp_ai_synthetic",
+            "PERSONAL_GCP_DEFAULT_TABLE_ID": "synthetic_athletes",
+            "PERSONAL_GCP_EXECUTION_ENABLED": "true",
+            "PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT": PERSONAL_PROJECT,
+        }
+        settings.update(overrides)
+        return settings
+
     def test_personal_defaults_are_bounded_and_execution_stays_disabled(self):
         result = run_python(
             "from unittest.mock import patch; import config; "
             "assert config.PERSONAL_GCP_EXECUTION_ENABLED is False; "
             "assert config.MAX_BYTES_PROCESSED == 262144000; "
             "assert config.BIGQUERY_JOB_LOCATION == 'US'; "
-            "patcher = patch.object(config, 'load_bigquery_credentials', return_value=None); patcher.start(); "
-            "assert config.get_bigquery_client_kwargs() == {'project': config.PERSONAL_GCP_PROJECT_ID, 'location': 'US'}; "
+            "sentinel=object(); patcher = patch.object(config, 'load_bigquery_credentials', return_value=sentinel); patcher.start(); "
+            "assert config.get_bigquery_client_kwargs() == {'project': config.PERSONAL_GCP_PROJECT_ID, 'location': 'US', 'credentials': sentinel}; "
             "assert config.BIGQUERY_JOB_LABELS == {'app': 'nsp-ai', 'runtime-profile': 'personal-gcp'}; "
             "assert config.BIGQUERY_JOB_TIMEOUT_SECONDS == 60; "
             "assert (config.GEMINI_MAX_OUTPUT_TOKENS, config.GEMINI_REQUEST_TIMEOUT_SECONDS, config.GEMINI_MAX_CALLS_PER_REQUEST) == (4096, 60, 8); "
@@ -87,6 +113,28 @@ class PersonalConfigTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_personal_gemini_never_falls_back_to_shared_adc(self):
+        code = """
+from unittest.mock import patch
+import config
+import gemini_service
+from usage_limits import request_usage_scope
+
+assert config.PERSONAL_GCP_EXECUTION_ENABLED is True
+with patch.object(gemini_service, 'load_gemini_credentials', return_value=None), \\
+     patch.object(gemini_service.genai, 'Client') as client:
+    with request_usage_scope():
+        try:
+            gemini_service._LazyGeminiClient()._get_client()
+        except ValueError as error:
+            assert 'shared ADC fallback is disabled' in str(error)
+        else:
+            raise AssertionError('PERSONAL_GCP fell back to shared ADC')
+    client.assert_not_called()
+"""
+        result = run_python(code, self.execution_settings())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_personal_job_timeout_never_exceeds_sixty_seconds(self):
         for query_timeout, expected in (("300", 60), ("30", 30)):
             with self.subTest(query_timeout=query_timeout):
@@ -98,7 +146,7 @@ class PersonalConfigTests(unittest.TestCase):
 
     def test_personal_rejects_unsafe_safeguard_settings(self):
         cases = (
-            ({"PERSONAL_GCP_EXECUTION_ENABLED": "true"}, "cannot be enabled in this checkpoint"),
+            ({"PERSONAL_GCP_EXECUTION_ENABLED": "true"}, "must exactly match PERSONAL_GCP_PROJECT_ID"),
             ({"PERSONAL_GCP_BIGQUERY_LOCATION": "global"}, "not global"),
             ({"PERSONAL_GCP_BIGQUERY_LOCATION": "US;DROP"}, "not global"),
             ({"GEMINI_MAX_OUTPUT_TOKENS": "9000"}, "GEMINI_MAX_OUTPUT_TOKENS must be a positive integer no greater than 8192"),
@@ -116,6 +164,62 @@ class PersonalConfigTests(unittest.TestCase):
                 result = run_python("import config", {**self.personal, **overrides})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(expected, result.stderr)
+
+    def test_personal_execution_requires_both_opt_in_values(self):
+        confirmation_only = run_python(
+            "import config; assert config.PERSONAL_GCP_EXECUTION_ENABLED is False",
+            {**self.personal, "PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT": PERSONAL_PROJECT},
+        )
+        self.assertEqual(confirmation_only.returncode, 0, confirmation_only.stderr)
+
+        for confirmation in (None, "another-project"):
+            with self.subTest(confirmation=confirmation):
+                settings = {**self.execution_settings(), "PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT": confirmation or ""}
+                result = run_python("import config", settings)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT must exactly match", result.stderr)
+
+    def test_personal_execution_accepts_exact_confirmation_for_synthetic_table_only(self):
+        for integer_type in ("INT64", "INTEGER"):
+            with self.subTest(integer_type=integer_type):
+                settings = self.execution_settings()
+                settings["PERSONAL_GCP_ALLOWED_COLUMNS_JSON"] = settings[
+                    "PERSONAL_GCP_ALLOWED_COLUMNS_JSON"
+                ].replace("INT64", integer_type)
+                result = run_python(
+                    "import config; assert config.PERSONAL_GCP_EXECUTION_ENABLED is True; "
+                    "assert config.PERSONAL_GCP_ALLOWED_DATASETS == {'nsp_ai_synthetic'}; "
+                    "assert config.PERSONAL_GCP_ALLOWED_TABLES == {'nsp_ai_synthetic': {'synthetic_athletes'}}; "
+                    "assert config.PERSONAL_GCP_ALLOWED_VIEWS == {}; "
+                    "assert config.PERSONAL_GCP_DEFAULT_DATASET_ID == 'nsp_ai_synthetic'; "
+                    "assert config.PERSONAL_GCP_DEFAULT_TABLE_ID == 'synthetic_athletes'",
+                    settings,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_execution_rejects_non_synthetic_dataset_or_table_allowlists(self):
+        invalid = (
+            {"PERSONAL_GCP_ALLOWED_DATASETS": "nsp_ai_synthetic,other_dataset"},
+            {"PERSONAL_GCP_ALLOWED_TABLES": '{"nsp_ai_synthetic":["synthetic_athletes","other_table"]}'},
+            {"PERSONAL_GCP_ALLOWED_VIEWS": '{"nsp_ai_synthetic":["approved_view"]}',
+             "PERSONAL_GCP_VIEW_DEFINITIONS_JSON": '{"nsp_ai_synthetic.approved_view":"SELECT synthetic_id FROM `mos-gcp-host-dev-prj-512311.nsp_ai_synthetic.synthetic_athletes`"}',
+             "PERSONAL_GCP_ALLOWED_COLUMNS_JSON": (
+                 '{"nsp_ai_synthetic.synthetic_athletes":['
+                 '{"name":"synthetic_id","data_type":"STRING","nullability":"NULLABLE"},'
+                 '{"name":"sport","data_type":"STRING","nullability":"NULLABLE"},'
+                 '{"name":"age_years","data_type":"INT64","nullability":"NULLABLE"},'
+                 '{"name":"category","data_type":"STRING","nullability":"NULLABLE"},'
+                 '{"name":"country_label","data_type":"STRING","nullability":"NULLABLE"},'
+                 '{"name":"association_label","data_type":"STRING","nullability":"NULLABLE"},'
+                 '{"name":"registration_year","data_type":"INT64","nullability":"NULLABLE"}],'
+                 '"nsp_ai_synthetic.approved_view":[{"name":"synthetic_id","data_type":"STRING","nullability":"NULLABLE"}]}'
+             )},
+            {"PERSONAL_GCP_DEFAULT_TABLE_ID": "other_table"},
+        )
+        for overrides in invalid:
+            with self.subTest(overrides=overrides):
+                result = run_python("import config", self.execution_settings(**overrides))
+                self.assertNotEqual(result.returncode, 0)
 
     def test_client_profile_keeps_existing_defaults(self):
         result = run_python(
@@ -139,6 +243,115 @@ class PersonalConfigTests(unittest.TestCase):
             "assert config.get_bigquery_client_kwargs()['location'] == 'EU'",
             {"RUNTIME_PROFILE": "CLIENT_GCP", "BIGQUERY_LOCATION": "EU", "GOOGLE_CLOUD_LOCATION": "global"},
         )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_enabled_personal_clients_are_lazy(self):
+        code = """
+from unittest.mock import patch
+import config
+
+assert config.PERSONAL_GCP_EXECUTION_ENABLED is True
+with patch('google.cloud.bigquery.Client') as bq, patch('google.genai.Client') as gemini:
+    import bigquery_database
+    import gemini_service
+    assert bigquery_database.client is not None
+    assert bigquery_database.client._client is None
+    assert gemini_service.client.__class__.__name__ == '_LazyGeminiClient'
+    assert gemini_service.client._client is None
+    bq.assert_not_called()
+    gemini.assert_not_called()
+"""
+        result = run_python(code, self.execution_settings())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_credential_loaders_validate_target_and_quota_without_refresh(self):
+        code = r"""
+from unittest.mock import Mock, patch
+from google.oauth2.credentials import Credentials as UserCredentials
+from google.auth.impersonated_credentials import Credentials as ImpersonatedCredentials
+import config
+
+project = config.PERSONAL_GCP_PROJECT_ID
+source = UserCredentials(
+    token=None,
+    refresh_token='offline-fixture-only',
+    client_id='offline-fixture-client',
+    client_secret='offline-fixture-secret',
+    quota_project_id=project,
+)
+source.refresh = Mock(side_effect=AssertionError('offline test attempted token refresh'))
+gemini = ImpersonatedCredentials(
+    source, 'nsp-ai-gemini@' + project + '.iam.gserviceaccount.com',
+    ['https://www.googleapis.com/auth/cloud-platform'], quota_project_id=project,
+)
+bigquery = ImpersonatedCredentials(
+    source, 'nsp-ai-bigquery@' + project + '.iam.gserviceaccount.com',
+    ['https://www.googleapis.com/auth/cloud-platform'], quota_project_id=project,
+)
+with patch('google.auth.load_credentials_from_file', side_effect=[(gemini, None), (bigquery, None)]) as loader:
+    assert config.load_gemini_credentials() is gemini
+    assert config.load_bigquery_credentials() is bigquery
+    assert loader.call_args_list[0].args[0] == config.GEMINI_CREDENTIALS_FILE
+    assert loader.call_args_list[1].args[0] == config.BIGQUERY_CREDENTIALS_FILE
+    assert source.token is None
+    source.refresh.assert_not_called()
+"""
+        result = run_python(code, self.execution_settings())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_credential_loaders_reject_wrong_target_or_quota_project(self):
+        cases = (
+            ("gemini", "other-gemini@mos-gcp-host-dev-prj-512311.iam.gserviceaccount.com", PERSONAL_PROJECT,
+             "Gemini credentials target the wrong service account"),
+            ("gemini", "nsp-ai-gemini@mos-gcp-host-dev-prj-512311.iam.gserviceaccount.com", "other-project",
+             "Gemini credentials must use the personal quota project"),
+            ("bigquery", "other-bq@mos-gcp-host-dev-prj-512311.iam.gserviceaccount.com", PERSONAL_PROJECT,
+             "BigQuery credentials target the wrong service account"),
+            ("bigquery", "nsp-ai-bigquery@mos-gcp-host-dev-prj-512311.iam.gserviceaccount.com", "other-project",
+             "BigQuery credentials must use the personal quota project"),
+        )
+        for service, target, quota_project, expected in cases:
+            code = f"""
+from unittest.mock import Mock, patch
+from google.oauth2.credentials import Credentials as UserCredentials
+from google.auth.impersonated_credentials import Credentials as ImpersonatedCredentials
+import config
+
+source = UserCredentials(token=None, refresh_token='offline-fixture', client_id='fixture', client_secret='fixture')
+source.refresh = Mock(side_effect=AssertionError('token refresh forbidden'))
+credential = ImpersonatedCredentials(
+    source, {target!r}, ['https://www.googleapis.com/auth/cloud-platform'], quota_project_id={quota_project!r}
+)
+loader = config.load_gemini_credentials if {service!r} == 'gemini' else config.load_bigquery_credentials
+with patch('google.auth.load_credentials_from_file', return_value=(credential, None)):
+    try:
+        loader()
+    except ValueError as error:
+        assert {expected!r} in str(error)
+    else:
+        raise AssertionError('credential mismatch was accepted')
+source.refresh.assert_not_called()
+"""
+            with self.subTest(service=service, target=target, quota_project=quota_project):
+                result = run_python(code, self.execution_settings())
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_personal_credential_loaders_reject_non_impersonated_credentials(self):
+        code = """
+from unittest.mock import patch
+from google.oauth2.credentials import Credentials as UserCredentials
+import config
+
+credential = UserCredentials(token=None, refresh_token='offline-fixture', client_id='fixture', client_secret='fixture')
+with patch('google.auth.load_credentials_from_file', return_value=(credential, None)):
+    try:
+        config.load_gemini_credentials()
+    except ValueError as error:
+        assert 'must use service-account impersonation' in str(error)
+    else:
+        raise AssertionError('non-impersonated credential was accepted')
+"""
+        result = run_python(code, self.execution_settings())
         self.assertEqual(result.returncode, 0, result.stderr)
 
 

@@ -20,7 +20,8 @@ PROFILE_VARIABLES = {
     "GEMINI_CREDENTIALS_FILE", "BIGQUERY_CREDENTIALS_FILE", "LOCAL_SCHEMA_BACKUP_PATH",
     "GOOGLE_APPLICATION_CREDENTIALS", "BIGQUERY_DYNAMIC_ALLOWED_DATASETS",
     "BIGQUERY_DYNAMIC_CATALOG_ENABLED", "BIGQUERY_DYNAMIC_ROUTING_ENABLED",
-    "PERSONAL_GCP_EXECUTION_ENABLED", "BIGQUERY_MAX_BYTES_PROCESSED",
+    "PERSONAL_GCP_EXECUTION_ENABLED", "PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT",
+    "BIGQUERY_MAX_BYTES_PROCESSED",
 }
 
 
@@ -224,7 +225,7 @@ class RuntimeProfileTests(unittest.TestCase):
                 ({"PERSONAL_BIGQUERY_PROJECT_ID": "mos-gcp-host-dev-prj"}, "must not equal CLIENT_GCP_PROJECT_ID"),
                 ({"GOOGLE_CLOUD_PROJECT": "mos-gcp-host-dev-prj"}, "conflicts with the explicit PERSONAL_GCP project settings"),
                 ({"GOOGLE_APPLICATION_CREDENTIALS": str(gemini_file)}, "not allowed in PERSONAL_GCP"),
-                ({"PERSONAL_GCP_EXECUTION_ENABLED": "true"}, "cannot be enabled in this checkpoint"),
+                ({"PERSONAL_GCP_EXECUTION_ENABLED": "true"}, "PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT must exactly match"),
                 ({"PERSONAL_GCP_GEMINI_CREDENTIALS_FILE": str(REPOSITORY_ROOT / "config.py")}, "must not point inside the source repository"),
                 ({"PERSONAL_GCP_DEFAULT_DATASET_ID": "not_approved"}, "must be in PERSONAL_GCP_ALLOWED_DATASETS"),
                 ({"PERSONAL_GCP_BIGQUERY_CREDENTIALS_FILE": str(gemini_file)}, "credential files must be distinct"),

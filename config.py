@@ -123,6 +123,9 @@ def _parse_personal_column_allowlist() -> dict[str, tuple[tuple[str, str, str], 
 
 
 PERSONAL_GCP_EXECUTION_ENABLED = False
+PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT: str | None = None
+PERSONAL_GCP_SYNTHETIC_DATASET_ID = "nsp_ai_synthetic"
+PERSONAL_GCP_SYNTHETIC_TABLE_ID = "synthetic_athletes"
 PERSONAL_GCP_ALLOWED_DATASETS: frozenset[str] = frozenset()
 PERSONAL_GCP_DATASET_MAPPINGS: dict[str, str] = {}
 PERSONAL_GCP_ALLOWED_TABLES: dict[str, frozenset[str]] = {}
@@ -158,8 +161,10 @@ if _legacy_gemini_project is not None:
     _legacy_gemini_project = _legacy_gemini_project.strip() or None
 
 if RUNTIME_PROFILE == "PERSONAL_GCP":
-    if os.getenv("PERSONAL_GCP_EXECUTION_ENABLED", "false").casefold() in {"1", "true", "yes"}:
-        raise ValueError("PERSONAL_GCP execution cannot be enabled in this checkpoint.")
+    _personal_execution_requested = os.getenv("PERSONAL_GCP_EXECUTION_ENABLED", "false").strip().casefold() in {"1", "true", "yes"}
+    PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT = (
+        os.getenv("PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT", "").strip() or None
+    )
     PERSONAL_GCP_PROJECT_ID = _required_profile_value("PERSONAL_GCP_PROJECT_ID")
     PERSONAL_GEMINI_PROJECT_ID = _required_profile_value("PERSONAL_GEMINI_PROJECT_ID")
     PERSONAL_BIGQUERY_PROJECT_ID = _required_profile_value("PERSONAL_BIGQUERY_PROJECT_ID")
@@ -171,6 +176,15 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
         PERSONAL_GEMINI_PROJECT_ID, PERSONAL_BIGQUERY_PROJECT_ID,
     )):
         raise ValueError("PERSONAL_GCP Gemini and BigQuery projects must equal PERSONAL_GCP_PROJECT_ID.")
+    if _personal_execution_requested:
+        if PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT != PERSONAL_GCP_PROJECT_ID:
+            raise ValueError("PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT must exactly match PERSONAL_GCP_PROJECT_ID.")
+        PERSONAL_GCP_EXECUTION_ENABLED = True
+    elif (
+        PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT
+        and PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT != PERSONAL_GCP_PROJECT_ID
+    ):
+        raise ValueError("PERSONAL_GCP_EXECUTION_CONFIRM_PROJECT must match PERSONAL_GCP_PROJECT_ID.")
     for variable, value in (
         ("GOOGLE_CLOUD_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT")),
         ("BIGQUERY_PROJECT_ID", os.getenv("BIGQUERY_PROJECT_ID")),
@@ -352,6 +366,43 @@ if RUNTIME_PROFILE == "PERSONAL_GCP":
     ):
         raise ValueError("PERSONAL_GCP_DEFAULT_TABLE_ID must be explicitly approved as a table or view.")
 
+    if PERSONAL_GCP_EXECUTION_ENABLED:
+        synthetic_dataset = PERSONAL_GCP_SYNTHETIC_DATASET_ID
+        synthetic_table = PERSONAL_GCP_SYNTHETIC_TABLE_ID
+        if PERSONAL_GCP_ALLOWED_DATASETS != frozenset({synthetic_dataset}):
+            raise ValueError("PERSONAL_GCP execution is restricted to nsp_ai_synthetic.")
+        if PERSONAL_GCP_ALLOWED_TABLES != {synthetic_dataset: frozenset({synthetic_table})}:
+            raise ValueError("PERSONAL_GCP execution is restricted to nsp_ai_synthetic.synthetic_athletes.")
+        if PERSONAL_GCP_ALLOWED_VIEWS:
+            raise ValueError("PERSONAL_GCP execution does not allow views in this checkpoint.")
+        if (
+            PERSONAL_GCP_DEFAULT_DATASET_ID.casefold() != synthetic_dataset
+            or PERSONAL_GCP_DEFAULT_TABLE_ID.casefold() != synthetic_table
+        ):
+            raise ValueError("PERSONAL_GCP defaults must target nsp_ai_synthetic.synthetic_athletes.")
+        expected_synthetic_columns = {
+            "synthetic_id": ("string", "nullable"),
+            "sport": ("string", "nullable"),
+            "age_years": ("int64", "nullable"),
+            "category": ("string", "nullable"),
+            "country_label": ("string", "nullable"),
+            "association_label": ("string", "nullable"),
+            "registration_year": ("int64", "nullable"),
+        }
+        configured_synthetic_columns = {}
+        for name, data_type, nullability in PERSONAL_GCP_ALLOWED_COLUMNS[
+            f"{synthetic_dataset}.{synthetic_table}"
+        ]:
+            normalized_type = data_type.casefold()
+            if normalized_type == "integer":
+                normalized_type = "int64"
+            configured_synthetic_columns[name.casefold()] = (
+                normalized_type,
+                nullability.casefold(),
+            )
+        if configured_synthetic_columns != expected_synthetic_columns:
+            raise ValueError("PERSONAL_GCP execution requires the approved synthetic athlete schema.")
+
     PERSONAL_GCP_GEMINI_LOCATION = _required_profile_value("PERSONAL_GCP_GEMINI_LOCATION")
     PERSONAL_GCP_BIGQUERY_LOCATION = _required_profile_value("PERSONAL_GCP_BIGQUERY_LOCATION")
     PROJECT_ID = PERSONAL_GCP_PROJECT_ID
@@ -415,7 +466,24 @@ def load_gemini_credentials():
         GEMINI_CREDENTIALS_FILE,
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
+    if RUNTIME_PROFILE == "PERSONAL_GCP" and PERSONAL_GCP_EXECUTION_ENABLED:
+        _validate_personal_impersonated_credentials(
+            credentials,
+            "nsp-ai-gemini@" + PERSONAL_GCP_PROJECT_ID + ".iam.gserviceaccount.com",
+            "Gemini",
+        )
     return credentials
+
+
+def _validate_personal_impersonated_credentials(credentials, expected_target: str, name: str) -> None:
+    from google.auth import impersonated_credentials
+
+    if not isinstance(credentials, impersonated_credentials.Credentials):
+        raise ValueError(f"PERSONAL_GCP {name} credentials must use service-account impersonation.")
+    if credentials.service_account_email != expected_target:
+        raise ValueError(f"PERSONAL_GCP {name} credentials target the wrong service account.")
+    if credentials.quota_project_id != PERSONAL_GCP_PROJECT_ID:
+        raise ValueError(f"PERSONAL_GCP {name} credentials must use the personal quota project.")
 
 
 def map_client_dataset_to_personal(dataset_id: str) -> str:
@@ -449,6 +517,12 @@ def load_bigquery_credentials():
         BIGQUERY_CREDENTIALS_FILE,
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
     )
+    if RUNTIME_PROFILE == "PERSONAL_GCP" and PERSONAL_GCP_EXECUTION_ENABLED:
+        _validate_personal_impersonated_credentials(
+            credentials,
+            "nsp-ai-bigquery@" + PERSONAL_GCP_PROJECT_ID + ".iam.gserviceaccount.com",
+            "BigQuery",
+        )
     return credentials
 
 
@@ -457,6 +531,8 @@ def get_bigquery_client_kwargs() -> dict[str, object]:
     if BIGQUERY_JOB_LOCATION:
         kwargs["location"] = BIGQUERY_JOB_LOCATION
     credentials = load_bigquery_credentials()
+    if RUNTIME_PROFILE == "PERSONAL_GCP" and credentials is None:
+        raise ValueError("PERSONAL_GCP BigQuery credentials are required; shared ADC fallback is disabled.")
     if credentials is not None:
         kwargs["credentials"] = credentials
     return kwargs

@@ -16,6 +16,7 @@ from config import (
     GEMINI_REQUEST_TIMEOUT_SECONDS,
     LOCATION,
     MODEL,
+    PERSONAL_GCP_EXECUTION_ENABLED,
     RUNTIME_PROFILE,
     load_gemini_credentials,
 )
@@ -69,6 +70,8 @@ class _LazyGeminiClient:
         require_gemini_access("inference")
         if self._client is None:
             credentials = load_gemini_credentials()
+            if RUNTIME_PROFILE == "PERSONAL_GCP" and credentials is None:
+                raise ValueError("PERSONAL_GCP Gemini credentials are required; shared ADC fallback is disabled.")
             kwargs = {
                 "vertexai": True,
                 "project": GEMINI_EFFECTIVE_PROJECT_ID,
@@ -82,7 +85,9 @@ class _LazyGeminiClient:
         return self._client
 
 
-client = _DisabledGeminiClient() if RUNTIME_PROFILE == "PERSONAL_GCP" else _LazyGeminiClient()
+client = _DisabledGeminiClient() if (
+    RUNTIME_PROFILE == "PERSONAL_GCP" and not PERSONAL_GCP_EXECUTION_ENABLED
+) else _LazyGeminiClient()
 
 OUT_OF_SCOPE_CLARIFICATIONS = {
     "en": (

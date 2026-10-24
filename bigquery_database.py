@@ -8,6 +8,7 @@ from config import (
     BIGQUERY_JOB_LOCATION,
     BIGQUERY_JOB_TIMEOUT_SECONDS,
     MAX_BYTES_PROCESSED,
+    PERSONAL_GCP_EXECUTION_ENABLED,
     QUERY_TIMEOUT_SECONDS,
     RUNTIME_PROFILE,
     get_bigquery_client_kwargs,
@@ -30,7 +31,10 @@ class _LazyBigQueryClient:
         return self._client.query(*args, **kwargs)
 
 
-client = _LazyBigQueryClient() if RUNTIME_PROFILE == "CLIENT_GCP" else None
+client = _LazyBigQueryClient() if (
+    RUNTIME_PROFILE == "CLIENT_GCP"
+    or (RUNTIME_PROFILE == "PERSONAL_GCP" and PERSONAL_GCP_EXECUTION_ENABLED)
+) else None
 
 
 class QueryBudgetExceeded(ValueError):
