@@ -24,6 +24,11 @@ if RUNTIME_PROFILE not in RUNTIME_PROFILE_OPTIONS:
     raise ValueError("RUNTIME_PROFILE must be exactly CLIENT_GCP, PERSONAL_GCP, or LOCAL.")
 SCHEMA_PROVIDER = RUNTIME_PROFILE
 
+_semantic_search_enabled = os.getenv("SEMANTIC_SEARCH_ENABLED", "false")
+if _semantic_search_enabled not in {"true", "false"}:
+    raise ValueError("SEMANTIC_SEARCH_ENABLED must be exactly true or false.")
+SEMANTIC_SEARCH_ENABLED = _semantic_search_enabled == "true"
+
 CLIENT_GCP_PROJECT_ID = os.getenv("CLIENT_GCP_PROJECT_ID")
 if not CLIENT_GCP_PROJECT_ID:
     CLIENT_GCP_PROJECT_ID = (

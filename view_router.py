@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from config import MODEL
 from conversation_context import history_payload
 from bigquery_catalog import sanitize_metadata_text
+from semantic_search import build_semantic_context
 from view_catalog import get_queryable_sources, get_source, get_source_capability_limitation
 
 @dataclass(frozen=True)
@@ -41,12 +42,13 @@ def build_routing_prompt(question: str, language: str, columns_by_view: dict, hi
                 ],
             }
         )
+    semantic_context = build_semantic_context(question, tuple(entry["source_id"] for entry in entries))
     response_language = "Arabic" if language == "ar" else "English"
     return f"""
 You perform Stage A source routing for the National Sports Platform. Select only from the explicitly query-authorized source IDs listed below. Detailed schemas are retrieved only after source selection.
 
 Available sources (JSON):
-{json.dumps(entries, ensure_ascii=False)}
+{json.dumps(entries, ensure_ascii=False)}{semantic_context}
 
 Recent conversation (JSON; use only when the current question depends on it):
 {json.dumps(history_payload(history), ensure_ascii=False)}

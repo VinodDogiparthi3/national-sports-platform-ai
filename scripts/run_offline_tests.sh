@@ -12,7 +12,7 @@ if [[ -z "${NSP_OFFLINE_STAGE:-}" ]]; then
     # Hide every ambient cloud identity and project before the isolated stage starts.
     while IFS='=' read -r name _; do
         case "$name" in
-            PERSONAL_GCP_*|GOOGLE_*|CLOUDSDK_*|GCLOUD_*|GCE_METADATA_*|BIGQUERY_*|GEMINI_*|RUNTIME_PROFILE|SCHEMA_PROVIDER|CLIENT_GCP_PROJECT_ID|LOCAL_SCHEMA_BACKUP_PATH)
+            PERSONAL_GCP_*|GOOGLE_*|CLOUDSDK_*|GCLOUD_*|GCE_METADATA_*|BIGQUERY_*|GEMINI_*|RUNTIME_PROFILE|SCHEMA_PROVIDER|CLIENT_GCP_PROJECT_ID|LOCAL_SCHEMA_BACKUP_PATH|SEMANTIC_SEARCH_ENABLED)
                 unset "$name" ;;
         esac
     done < <(env)

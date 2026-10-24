@@ -23,6 +23,7 @@ from config import (
 from bigquery_access import require_gemini_access
 from conversation_context import history_payload, resolve_pending_selection
 from schema_metadata import FILTER_VALUE_COLUMNS, get_bigquery_schema, get_filter_values
+from semantic_search import build_semantic_context
 from usage_limits import consume_gemini_call
 from view_catalog import get_source, get_source_capability_limitation
 
@@ -366,6 +367,7 @@ def generate_sql(question: str, language: str = "en", view_id: str | None = None
     if limitation:
         return f"CLARIFICATION: {limitation}"
     schema = get_bigquery_schema(view_id) if view_id else get_bigquery_schema()
+    semantic_context = build_semantic_context(question, (view_id or BIGQUERY_TABLE_ID,))
     response_language = "Arabic" if language == "ar" else "English"
     clarification = get_out_of_scope_clarification(language)
     prompt = f"""
@@ -375,7 +377,7 @@ Generate a Google BigQuery Standard SQL SELECT query
 for the user's question.
 
 Schema:
-{schema}
+{schema}{semantic_context}
 
 Recent conversation (JSON; use only to resolve references in the current question):
 {json.dumps(history_payload(history), ensure_ascii=False)}
